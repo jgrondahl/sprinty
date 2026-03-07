@@ -1,15 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import Anthropic from '@anthropic-ai/sdk';
 import {
   type AgentConfig,
   type AgentPersona,
   type HandoffDocument,
+  type LlmClient,
   type Story,
   type WorkspaceState,
 } from '@splinty/core';
 import { HandoffManager } from '@splinty/core';
 import { WorkspaceManager } from '@splinty/core';
+import { AnthropicClient } from './providers/anthropic-client';
 
 // ─── Custom Errors ────────────────────────────────────────────────────────────
 
@@ -28,10 +29,13 @@ export class AgentCallError extends Error {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface ClaudeCallOptions {
+export interface LlmCallOptions {
   systemPrompt: string;
   userMessage: string;
 }
+
+/** @deprecated Use LlmCallOptions. Kept as alias for backwards compatibility. */
+export type ClaudeCallOptions = LlmCallOptions;
 
 // ─── Abstract Base Agent ──────────────────────────────────────────────────────
 
@@ -41,19 +45,19 @@ export abstract class BaseAgent {
   protected readonly handoffManager: HandoffManager;
   protected currentWorkspace: WorkspaceState | null = null;
 
-  // Allow injection of Anthropic client for testing
-  protected anthropic: Anthropic;
+  /** The LLM client this agent uses. Swap per-persona via OrchestratorConfig. */
+  protected llmClient: LlmClient;
 
   constructor(
     config: AgentConfig,
     workspaceManager: WorkspaceManager,
     handoffManager: HandoffManager,
-    anthropicClient?: Anthropic
+    llmClient?: LlmClient
   ) {
     this.config = config;
     this.workspaceManager = workspaceManager;
     this.handoffManager = handoffManager;
-    this.anthropic = anthropicClient ?? new Anthropic();
+    this.llmClient = llmClient ?? new AnthropicClient();
   }
 
   /**
@@ -65,38 +69,33 @@ export abstract class BaseAgent {
   ): Promise<HandoffDocument>;
 
   /**
-   * Call Claude with retry-with-backoff. Up to config.maxRetries attempts.
+   * Call the LLM with retry-with-backoff. Up to config.maxRetries attempts.
    * Exponential backoff: 1s, 2s, 4s, ...
    * Throws AgentCallError on all attempts failing.
    */
-  protected async callClaude(options: ClaudeCallOptions): Promise<string> {
+  protected async callLlm(options: LlmCallOptions): Promise<string> {
     const { systemPrompt, userMessage } = options;
     const maxAttempts = this.config.maxRetries;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      this.logActivity(`Claude call attempt ${attempt}/${maxAttempts}`);
+      this.logActivity(`LLM call attempt ${attempt}/${maxAttempts}`);
 
       try {
-        const message = await this.anthropic.messages.create({
+        const text = await this.llmClient.complete({
           model: this.config.model,
-          max_tokens: 4096,
+          systemPrompt,
+          userMessage,
+          maxTokens: 4096,
           temperature: this.config.temperature,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
         });
 
-        const textBlock = message.content.find((b) => b.type === 'text');
-        if (!textBlock || textBlock.type !== 'text') {
-          throw new Error('Claude returned no text block');
-        }
-
-        this.logActivity(`Claude call attempt ${attempt} succeeded`);
-        return textBlock.text;
+        this.logActivity(`LLM call attempt ${attempt} succeeded`);
+        return text;
       } catch (err) {
         lastError = err;
         this.logActivity(
-          `Claude call attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`
+          `LLM call attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`
         );
 
         if (attempt < maxAttempts) {
@@ -110,6 +109,13 @@ export abstract class BaseAgent {
     const error = new AgentCallError(this.config.persona, maxAttempts, lastError);
     this.logError(error.message);
     throw error;
+  }
+
+  /**
+   * @deprecated Use callLlm(). Kept as alias for backwards compatibility.
+   */
+  protected callClaude(options: LlmCallOptions): Promise<string> {
+    return this.callLlm(options);
   }
 
   /**

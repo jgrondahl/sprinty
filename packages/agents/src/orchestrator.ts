@@ -5,6 +5,7 @@ import {
   HandoffManager,
   WorkspaceManager,
   StoryStateMachine,
+  type LlmClient,
   type Story,
   type HandoffDocument,
   type AppBuilderResult,
@@ -25,8 +26,21 @@ import {
 export interface OrchestratorConfig {
   projectId: string;
   workspaceBaseDir?: string;
-  /** Injectable Anthropic client — used in tests to mock all agents */
-  anthropicClient?: unknown;
+  /**
+   * Default LLM client used by all agents that don't have a persona-specific
+   * override. Falls back to AnthropicClient (reads ANTHROPIC_API_KEY) when omitted.
+   */
+  defaultClient?: LlmClient;
+  /**
+   * Per-persona LLM client overrides. Any persona listed here uses its own
+   * client; all others fall back to defaultClient.
+   *
+   * Example — run QA on GitHub Copilot, everything else on Anthropic:
+   * ```ts
+   * clients: { [AgentPersona.QA_ENGINEER]: new GitHubCopilotClient() }
+   * ```
+   */
+  clients?: Partial<Record<AgentPersona, LlmClient>>;
   /** Injectable git factory — forwarded to DeveloperAgent */
   gitFactory?: Parameters<DeveloperAgent['setGitFactory']>[0];
   /** Injectable GitHub PR creator — called after QA PASS */
@@ -128,14 +142,15 @@ export class SprintOrchestrator {
     this.ledger.upsertStory(this.config.projectId, story);
 
     // Build shared agent dependencies
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anthropic = this.config.anthropicClient as any;
+    // Resolve client for each persona: per-persona override → defaultClient → AnthropicClient default
+    const clientFor = (persona: AgentPersona): LlmClient | undefined =>
+      this.config.clients?.[persona] ?? this.config.defaultClient;
 
     const biz = new BusinessOwnerAgent(
       AGENT_CONFIGS[AgentPersona.BUSINESS_OWNER]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.BUSINESS_OWNER)
     );
     biz.setWorkspace(ws);
 
@@ -143,7 +158,7 @@ export class SprintOrchestrator {
       AGENT_CONFIGS[AgentPersona.PRODUCT_OWNER]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.PRODUCT_OWNER)
     );
     po.setWorkspace(ws);
 
@@ -151,7 +166,7 @@ export class SprintOrchestrator {
       AGENT_CONFIGS[AgentPersona.ARCHITECT]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.ARCHITECT)
     );
     architect.setWorkspace(ws);
 
@@ -159,7 +174,7 @@ export class SprintOrchestrator {
       AGENT_CONFIGS[AgentPersona.DEVELOPER]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.DEVELOPER)
     );
     dev.setWorkspace(ws);
     if (this.config.gitFactory) dev.setGitFactory(this.config.gitFactory);
@@ -168,7 +183,7 @@ export class SprintOrchestrator {
       AGENT_CONFIGS[AgentPersona.SOUND_ENGINEER]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.SOUND_ENGINEER)
     );
     soundEng.setWorkspace(ws);
 
@@ -176,7 +191,7 @@ export class SprintOrchestrator {
       AGENT_CONFIGS[AgentPersona.QA_ENGINEER]!,
       this.workspaceMgr,
       this.handoffMgr,
-      anthropic
+      clientFor(AgentPersona.QA_ENGINEER)
     );
     qa.setWorkspace(ws);
 

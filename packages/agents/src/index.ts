@@ -1,6 +1,6 @@
 // packages/agents — barrel export
 export { BaseAgent, AgentCallError } from './base-agent';
-export type { ClaudeCallOptions } from './base-agent';
+export type { ClaudeCallOptions, LlmCallOptions } from './base-agent';
 export { BusinessOwnerAgent } from './business-owner';
 export { ProductOwnerAgent } from './product-owner';
 export { ArchitectAgent } from './architect';
@@ -11,3 +11,4 @@ export { QAEngineerAgent } from './qa-engineer';
 export type { QAVerdict } from './qa-engineer';
 export { SprintOrchestrator } from './orchestrator';
 export type { OrchestratorConfig } from './orchestrator';
+export { AnthropicClient, GitHubCopilotClient } from './providers';
