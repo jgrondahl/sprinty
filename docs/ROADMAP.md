@@ -302,16 +302,16 @@ interface RunTelemetry {
   architecture: ArchitectureMetrics;
   execution: ExecutionMetrics;
   sandbox: AggregateSandboxTelemetry;
-  cost: CostMetrics;             // merged from Phase 3's cost tracking
+  // cost: CostMetrics — deferred to Phase 3 (see section 3.6)
 }
 
 interface ArchitectureMetrics {
   planId: string;
   revisionCount: number;
-  moduleBoundaryViolations: number;
-  dependencyViolations: number;
-  technologyViolations: number;
-  driftScore: number;            // 0.0 = perfect compliance, 1.0 = total drift
+  dependencyViolations: number;      // 'dependency-boundary' rule violations
+  requiredExportViolations: number;  // 'required-exports' rule violations
+  fileOwnershipViolations: number;   // 'file-ownership' rule violations
+  technologyViolations: number;      // 'technology-compliance' rule violations
   constraintsSatisfied: number;
   constraintsTotal: number;
 }
@@ -337,21 +337,15 @@ interface AggregateSandboxTelemetry {
   totalDiskUsageMb: number;
   totalSandboxRuntimeMs: number;
 }
-
-interface CostMetrics {
-  llmCalls: number;
-  totalTokens: { input: number; output: number };
-  estimatedCostUsd: number;
-  costPerStory: Record<string, number>;  // storyId → USD
-  costPerAgent: Record<string, number>;  // AgentPersona → USD
-}
 ```
+
+> **Deferred**: `CostMetrics` (LLM call costs, token attribution per story/agent) is omitted from v1 telemetry. It can be added in Phase 3 without breaking the `RunTelemetry` schema. Similarly, drift score trending across sprints and long-term archival of telemetry are Phase 3 additions.
 
 #### Telemetry Collection Points
 
 | Source | What It Reports | When |
 |---|---|---|
-| `ArchitectureEnforcer` | Violation counts, drift score, compliance metrics | After each enforcement pass |
+| `ArchitectureEnforcer` | Violation counts per rule, compliance metrics | After each enforcement pass |
 | `SandboxEnvironment` | CPU, memory, disk, runtime, exit codes | After each sandbox execution |
 | Orchestrator | Task completion/failure/block counts, retry counts | After each task lifecycle event |
 | `ArchitecturePlannerAgent` | Revision triggers, plan version changes | After each revision |
@@ -361,11 +355,21 @@ interface CostMetrics {
 
 - Telemetry is stored per-sprint: `.splinty/{projectId}/telemetry/sprint-{sprintId}.json`
 - Exposed via CLI: `splinty status --metrics` (current sprint) and `splinty status --metrics --sprint={id}` (historical)
-- Drift score trending: `splinty status --drift` shows drift score across recent sprints
+
+> **Deferred**: `splinty status --drift` (cross-sprint drift trending) is a Phase 3 addition.
+
+#### Telemetry Layering (Foundational vs Enterprise)
+
+Foundational telemetry (this section, Phase 1 + Infrastructure) is the minimum required for safe autonomous execution:
+- **Layer 1 — Event log**: task lifecycle transitions, retries, revision triggers
+- **Layer 2 — Metrics**: architecture/execution/sandbox aggregates in `RunTelemetry`
+- **Layer 3 — Correlation IDs**: stable `runId`/`sprintId` links across enforcer, sandbox, planner, and orchestrator records
+
+Enterprise observability (Phase 3) adds cost attribution, cross-sprint drift trending, trace correlation, and metric export to external systems.
 
 #### Relationship to Phase 3 Observability
 
-This infrastructure provides the **foundational telemetry layer**. Phase 3's "Observability & Cost Tracking" section (3.6) builds on it with enterprise-grade additions: cost attribution per story/agent, trace correlation across multi-service runs, metric export to external systems, and configurable retention policies.
+This infrastructure provides the **foundational telemetry layer**. Phase 3's "Advanced Observability & Cost Attribution" section (3.6) builds on it with enterprise-grade additions: cost attribution per story/agent, trace correlation across multi-service runs, metric export to external systems, and configurable retention policies.
 
 ### Infrastructure Definition of Done
 
@@ -373,7 +377,8 @@ This infrastructure provides the **foundational telemetry layer**. Phase 3's "Ob
 - [ ] `ToolBackedWorkspaceManager` adapter wrapping `WorkspaceManager` API
 - [ ] `ExecutionLogEntry` recording for all tool invocations
 - [ ] Redaction policy applied to execution logs
-- [ ] `RunTelemetry` schema with collection hooks in enforcer, sandbox, and orchestrator
+- [ ] `RunTelemetry` schema (architecture + execution + sandbox metrics) with collection hooks in enforcer, sandbox, and orchestrator
+- [ ] Telemetry layering implemented (event log + metrics + correlation IDs)
 - [ ] `splinty status --metrics` CLI command
 - [ ] Log storage in `.splinty/{projectId}/logs/` with configurable retention
 - [ ] All existing tests still pass (adapter is transparent to agents)
@@ -443,19 +448,20 @@ Schema versioning ensures old runs still deserialize.
 
 #### Multi-Pass Design
 
-A single LLM call producing the full plan is unreliable — too much output, too many coupled decisions. The planner runs as **three sequential LLM passes** with deterministic validation between each:
+A single LLM call producing the full plan is unreliable — too much output, too many coupled decisions. The planner runs as **three sequential LLM passes** with deterministic validation at two levels.
 
-**Pass A — Story Fact Extraction** (can run in parallel per story):
-- Normalize each refined story into: `{ domain, nouns, verbs, externalIntegrations, dataEntities, endpoints, nonFunctionals }`
-- This compresses story context and makes Pass B's input consistent
+**Level L0 — Global Plan** (`level: 'global'`, usually stable):
+- Pass A: extract project-wide facts from the sprint batch + prior memory
+- Pass B: choose stack and top-level module/service boundaries
+- Pass C: emit global invariants and constraints (security, technology, boundary rules)
 
-**Pass B — Global Architecture Synthesis** (single call, all story facts as input):
-- Propose `techStack`, `modules` with `exposedInterfaces`, and module dependency graph
-- This is the core creative decision — which modules exist, what each module's boundary is
+**Level L2 — Sprint Plan** (`level: 'sprint'`, execution-facing):
+- Input: active Global Plan + current stories
+- Pass C produces `storyModuleMapping`, `executionOrder`, and mechanizable sprint constraints
 
-**Pass C — Mechanizable Outputs** (single call, modules + stories as input):
-- Produce `storyModuleMapping`, `executionOrder`, and `constraints` expressed as structural rules
-- Constraints must be machine-checkable (import path rules, allowed deps, required exports)
+> **Deferred**: A middle domain/service layer (L1) that refines module interfaces per service or bounded context is intentionally omitted from v1. The two-level model (global + sprint) is sufficient for the majority of enterprise applications and significantly reduces planning and revision complexity. L1 domain plans can be introduced when multi-service support (Phase 3) creates a concrete need.
+
+This two-level hierarchy minimizes context pressure (most tasks need the sprint plan + a digest of the global plan, not full plan hierarchies) and reduces revision blast radius (revise sprint first, global only when required).
 
 **Deterministic validation** runs after each pass:
 - Schema validation (Zod)
@@ -471,8 +477,13 @@ interface ArchitecturePlan {
   planId: string;
   schemaVersion: number;        // for forward compatibility
   projectId: string;
-  sprintId: string;
+  level: 'global' | 'sprint';  // two-level hierarchy (domain level deferred to v2)
+  scopeKey: string;             // "global" | "sprint:<id>"
+  sprintId?: string;            // required for level='sprint'
+  parentPlanId?: string;        // sprint plans reference their parent global plan
   supersedesPlanId?: string;    // if this replaces a prior plan
+  supersededByPlanId?: string;  // set when this plan is superseded
+  status: 'active' | 'stale' | 'archived';
   createdAt: string;
 
   techStack: TechStackDecision;
@@ -533,22 +544,28 @@ interface ArchitectureConstraint {
   rule: string;                 // machine-checkable rule (see Enforcement Layer)
   severity: 'error' | 'warning';
 }
+
+// Backward compatibility note:
+  // Existing references to "ArchitecturePlan" remain valid.
+  // In planned-sprint mode, current consumers can treat the active sprint-level plan
+  // as the execution plan while reading global constraints via parentPlanId.
 ```
 
 #### Integration
 
 1. `SprintOrchestrator.run(stories[])` runs per-story BizOwner + PO first
-2. Calls `ArchitecturePlannerAgent.execute(refinedStories, projectMemory)` 
-3. Saves `ArchitecturePlan` to project workspace as a versioned artifact
-4. Plan is injected into every subsequent handoff via the typed `architecturePlan` field
-5. The existing `ArchitectAgent` (per-story) designs implementation within plan constraints
+2. Calls `ArchitecturePlannerAgent.execute(refinedStories, projectMemory)` — L0 global pass, then L2 sprint pass
+3. Saves `ArchitecturePlan` artifacts (global + sprint) to workspace with version links
+4. Injects the active sprint plan + global plan ref into subsequent handoffs via typed artifacts
+5. The existing `ArchitectAgent` (per-story) designs implementation within those constraints
 
 #### Plan Evolution Across Sprints
 
-When a prior `ArchitecturePlan` exists (from a previous sprint), the planner receives it as input and must:
-- **Extend** existing modules (add new interfaces, new stories) — the default
-- **Supersede** decisions only when explicitly justified (new ADR with `status: 'superseded'` referencing the old one)
-- Never silently change tech stack or module boundaries — flag for human review if needed
+When prior plan artifacts exist, the planner evolves them:
+- **Global (L0)**: extended rarely; changes are high-risk and human-gated by default
+- **Sprint (L2)**: evolves most frequently and drives execution scheduling
+
+Revision policy: revise the sprint plan first; escalate to global only when the failure clearly involves cross-cutting stack or boundary decisions.
 
 ---
 
@@ -558,28 +575,61 @@ When a prior `ArchitecturePlan` exists (from a previous sprint), the planner rec
 
 **When it runs**: AFTER Architecture Planning, BEFORE task execution.
 
-**New component**: `TaskDecomposer` — an LLM agent that translates the architecture plan + stories into implementation tasks.
+**New component**: `TaskDecomposer` — a deterministic first-pass decomposer that derives tasks mechanically from the architecture plan + story acceptance criteria. An optional LLM enrichment pass fills in task descriptions.
 
 #### Task Granularity: Capability Slices
 
-The right granularity is **one module + one interface slice**:
-- A task adds or changes a small public surface on one module + its implementation + its tests
-- Typically touches **1–5 files**, produces **1–3 exported symbols** (or one endpoint)
+The primary boundary is **one module + one public interface/capability change**:
+- A task adds or changes exactly one public interface slice on one module (or one endpoint contract)
+- The task includes implementation + tests needed to make that interface change runnable
 - Has explicit prerequisites (e.g., "UserRepository exists")
 
-Too coarse ("implement auth module") hides ordering and AC traceability. Too fine ("create user.ts") fragments context so the LLM can't make coherent decisions.
+File count is a **secondary complexity guardrail**, not the primary unit of decomposition:
+- Typical tasks often touch 1–5 files, but this is an outcome, not the definition
+- If an interface change spans many files, split by interface concern where possible
+- If a trivial interface change touches >8 files due to cross-cutting wiring, flag for human review rather than force arbitrary slicing
+
+Too coarse ("implement auth module") hides ordering and AC traceability. Too fine ("create user.ts") fragments context so the LLM can't make coherent decisions. Interface-scoped tasks preserve semantic cohesion better than file-count-scoped tasks.
+
+#### Deterministic Decomposition (First-Pass)
+
+Rather than asking an LLM to decompose tasks from scratch (which risks inconsistency and over-decomposition), the `TaskDecomposer` derives tasks mechanically from what the architecture plan already declares:
+
+```
+For each story S:
+  For each module M in storyModuleMapping[S]:
+    For each interface I in M.exposedInterfaces:
+      Create one ImplementationTask:
+        type = 'create'  if M is new (not in prior sprint's modules)
+             = 'extend'  if M already exists
+        storyIds = [S]
+        module = M.name
+        description = "" // filled by optional LLM enrichment pass
+        ownedFiles = deterministic from M.directory + I name convention
+        acceptanceCriteria = story AC items that mention I or M
+```
+
+**Optional LLM enrichment pass**: After the deterministic skeleton is produced, a single LLM call fills in `description` fields and resolves ambiguous `ownedFiles` for tasks where file layout isn't obvious. This pass is a text-completion task, not a planning task — it cannot add or remove tasks.
+
+File ownership and scheduling remain fully deterministic:
+- `ownedFiles` assigned by module ownership rules (no two parallel tasks may own the same file)
+- `TaskGroup` scheduling derived from `executionOrder` groups in the architecture plan
+
+> **Rationale**: Starting deterministically from the module map + story AC produces consistent, bounded decomposition. LLMs are used only where human language understanding adds value (descriptions), not where arithmetic suffices.
 
 #### SprintTaskPlan Schema
 
 ```typescript
 interface SprintTaskPlan {
   sprintId: string;
-  planId: string;               // references the ArchitecturePlan.planId
+  planId: string;               // references the active sprint-level ArchitecturePlan.planId
+  parentGlobalPlanId: string;   // the global plan this sprint plan derives from
   schemaVersion: number;
 
   tasks: ImplementationTask[];
   schedule: TaskSchedule;
   integrationTasks: IntegrationTask[];  // system wiring tasks
+  integrationPhase?: IntegrationPhase;  // explicit post-module integration stage
 }
 
 interface ImplementationTask {
@@ -644,6 +694,19 @@ function validateNoFileCollisions(group: TaskGroup, tasks: ImplementationTask[])
 
 Module-level tasks produce code that compiles in isolation. But system wiring — app bootstrap, DI/container registration, route mounting, database connection — needs dedicated `IntegrationTask`s that run AFTER module tasks complete. Without these, you get artifacts that "work in isolation" but don't compose into a running application.
 
+To avoid fragmented late-stage wiring work, integration responsibilities are consolidated into a small explicit **Integration Phase**.
+
+```typescript
+interface IntegrationPhase {
+  phaseId: string;
+  tasks: IntegrationTask[];        // expected small set (typically 1-3)
+  dependsOnTaskGroups: number[];   // module task groups that must finish first
+  bootValidationCommand?: string;  // e.g. "npm run start -- --check" or smoke test command
+}
+```
+
+Guideline: prefer a small number of integration tasks that assemble bootstrapping, interface registration, and runtime wiring, rather than many scattered one-off integration tasks.
+
 #### How the Developer Agent Changes
 
 The Developer agent receives an `ImplementationTask` instead of a `Story`:
@@ -654,13 +717,14 @@ The Developer agent receives an `ImplementationTask` instead of a `Story`:
 
 interface DeveloperContext {
   task: ImplementationTask;
-  plan: ArchitecturePlan;
-  moduleFiles: FileContent[];    // existing files in this module
+  sprintPlan: ArchitecturePlan;    // active sprint-level plan
+  globalPlan: ArchitecturePlan;    // parent global plan (or compact digest)
+  moduleFiles: FileContent[];      // existing files in this module
   dependencyOutputs: FileContent[]; // outputs from prerequisite tasks
 }
 ```
 
-The Developer prompt includes the task description, target files, expected outputs, acceptance criteria, and relevant module context — scoped tightly to what this task needs.
+The Developer prompt includes the task description, target files, expected outputs, acceptance criteria, and relevant module context — scoped tightly to what this task needs. Default context payload is the sprint plan + a compact digest of the global plan; the full global plan is loaded on-demand only when enforcement or integration requires it.
 
 #### Result Mapping Back to Stories
 
@@ -679,16 +743,16 @@ interface DecompositionGuardrails {
   maxTasksPerStory: number;       // default: 5
   maxTasksPerSprint: number;      // default: 50
   maxParallelTasks: number;       // default: os.cpus().length
-  maxRevisionsPerSprint: number;  // default: 3 (shared with revision loop)
-  maxRevisionsPerStory: number;   // default: 2
+  maxRevisionsPerSprint: number;  // default: 1 (human approval required after first revision)
+  maxRevisionsPerStory: number;   // default: 1
 }
 
 const DEFAULT_GUARDRAILS: DecompositionGuardrails = {
   maxTasksPerStory: 5,
   maxTasksPerSprint: 50,
   maxParallelTasks: require('os').cpus().length,
-  maxRevisionsPerSprint: 3,
-  maxRevisionsPerStory: 2,
+  maxRevisionsPerSprint: 1,
+  maxRevisionsPerStory: 1,
 };
 ```
 
@@ -697,16 +761,17 @@ const DEFAULT_GUARDRAILS: DecompositionGuardrails = {
 | Limit | Behavior |
 |---|---|
 | `maxTasksPerStory` exceeded | `TaskDecomposer` merges related tasks (same module, adjacent files). If still exceeded after merge, request human review. |
-| `maxTasksPerSprint` exceeded | Batch is too large. Split into sub-sprints by domain or execution group. Surface to user: "Sprint has N tasks (limit: 50). Split into K sub-sprints?" |
+| `maxTasksPerSprint` exceeded | Batch is too large. Split into sub-sprints by execution group. Surface to user: "Sprint has N tasks (limit: 50). Split into K sub-sprints?" |
 | `maxParallelTasks` exceeded | Scheduler enforces — groups are paged through at `maxParallelTasks` concurrency. Not an error, just throttling. |
-| `maxRevisionsPerSprint` exceeded | Halt sprint, escalate to human review. Architecture may be fundamentally misaligned. |
+| `maxRevisionsPerSprint` exceeded | Halt sprint, require human approval. Architecture may be fundamentally misaligned. |
 | `maxRevisionsPerStory` exceeded | Halt affected story only. Other stories continue. |
 
 **Task merging strategy**: When the decomposer produces >5 tasks for a story, it runs a merge pass:
 1. Group tasks by `module`
 2. Within each module, merge tasks that share `targetFiles` or sequential `dependencies`
 3. Merged task inherits the union of `acceptanceCriteria` from source tasks
-4. If a merged task would exceed 8 files, it's too large — flag for human review instead
+4. If a merged task changes more than one public interface slice, split by interface first
+5. If an interface-scoped task would still exceed 8 files, flag for human review instead
 
 Guardrails are configured via `OrchestratorConfig`:
 
@@ -757,25 +822,25 @@ interface ComplianceMetrics {
 }
 ```
 
-#### What It Checks (All Deterministic)
+#### What It Checks (4 Hard Rules, All Deterministic)
 
 Only structural facts that can be proven from code without understanding semantics:
 
 | Check | How |
 |---|---|
 | **Dependency boundaries** | Parse imports/requires. Module A may only import from Module B's `exposedInterfaces`, not its internals. Verify via import path analysis. |
-| **Technology compliance** | Scan `package.json` dependencies. If plan says Express, flag Fastify/Koa/Hapi. If plan says Vitest, flag Jest/Mocha. |
-| **Directory conventions** | If plan says `src/modules/{name}/`, verify files are in the correct directory for their module. |
-| **Pattern compliance (structural proxy)** | Reframe semantic patterns as import rules. E.g., "repository pattern" → only `**/repositories/**` may import `db/*` or database packages. Route handlers may not import database packages directly. |
 | **Required exports** | If a module declares `exposedInterfaces: ["loginHandler", "authMiddleware"]`, verify those symbols are actually exported from the module's public surface. |
 | **File ownership** | Verify the task only wrote to its `ownedFiles` list. Flag any writes outside the task's scope. |
+| **Technology compliance** | Scan `package.json` dependencies. If plan says Express, flag Fastify/Koa/Hapi. If plan says Vitest, flag Jest/Mocha. |
+
+> **Deferred**: Directory convention checks, pattern-proxy rules (e.g., "repository pattern" as import rules), interface-bypass scoring, and abstract naming heuristics are intentionally deferred from v1. These add significant implementation complexity for marginal enforcement value. Add them when you observe specific recurring violations that these rules would catch.
 
 #### What It Does NOT Check
 
 - Code quality, readability, naming style (leave to QA or linters)
 - Whether the code works (that's the sandbox's job)
 - Business logic correctness (that's QA's job)
-- Semantic architectural patterns that can't be reduced to import/path rules
+- Semantic architectural patterns (deferred — see above)
 
 #### Feedback Loop
 
@@ -799,7 +864,13 @@ Developer generates code
 
 #### Plan Version Pinning
 
-The enforcer must validate against a specific `planId`. During Developer retry loops, the plan is immutable — the Developer may only change code to satisfy the fixed plan. If the plan itself needs changing, that requires a new planner pass (escalation to human or re-planning).
+The enforcer validates against a specific active sprint `planId` plus the parent global plan. During Developer retry loops, plan versions are immutable — the Developer may only change code to satisfy that fixed plan.
+
+Enforcement scope is two-level:
+- **L0 Global constraints**: always-on invariants (tech stack, security/compliance, hard boundaries)
+- **L2 Sprint constraints**: task/sprint-local constraints and execution details
+
+Global constraints always win when they conflict with sprint constraints.
 
 ---
 
@@ -814,6 +885,7 @@ The enforcer must validate against a specific `planId`. During Developer retry l
 ```typescript
 interface PlanRevisionTrigger {
   reason: PlanRevisionReason;
+  level?: PlanRevisionLevel;     // resolved by orchestrator ('sprint' or 'global')
   taskId?: string;              // task that triggered the revision (if applicable)
   module?: string;              // module involved (if applicable)
   description: string;          // human-readable description of the issue
@@ -829,11 +901,17 @@ type PlanRevisionReason =
   | 'plan-reality-drift'        // Import graph / module boundaries diverged materially from plan
   | 'sandbox-constraint'        // Repeated resource-limit failures requiring architectural change
   | 'human-override';           // Human explicitly requests plan revision via CLI
+
+type PlanRevisionLevel = 'global' | 'sprint';
 ```
 
 #### Trigger Sources
 
 Five conditions emit a `PlanRevisionTrigger`. The first two are **weak signals** — they require corroborating evidence (enforcement reports, compiler errors, or sandbox telemetry) before triggering a revision. The remaining three are **strong signals** that trigger directly.
+
+Every trigger is classified to one of two levels:
+- `sprint` (default) — localized implementation/task misalignment; handled automatically (up to 1 revision, then human approval)
+- `global` — cross-cutting stack or boundary changes; human-gated by default
 
 **Weak signals (require corroboration):**
 
@@ -853,6 +931,30 @@ Five conditions emit a `PlanRevisionTrigger`. The first two are **weak signals**
 
 Every `PlanRevisionTrigger` must include a minimal **evidence bundle** — the artifacts that justify the revision. Without evidence, the planner cannot make an informed decision and risks making the architecture worse.
 
+To prevent planner context overflow, the orchestrator generates a compact `EvidenceSummary` from raw artifacts and passes the summary (plus artifact references) to the planner.
+
+```typescript
+interface EvidenceSummary {
+  triggerId: string;
+  level: PlanRevisionLevel;
+  failingModules: string[];
+  violatedConstraintIds: string[];
+  missingCapabilities: string[];
+  resourceLimitFailures: Array<{
+    taskId: string;
+    limit: 'cpu' | 'memory' | 'runtime' | 'disk';
+    actual: number;
+    configured: number;
+  }>;
+  affectedFiles: string[];
+  artifactRefs: string[];      // full raw evidence in ProjectMemory
+}
+```
+
+Planner input policy:
+- Default input: `EvidenceSummary` + plan digests + artifact refs
+- Full raw artifacts are loaded only on-demand for ambiguous/high-impact revisions
+
 Required evidence by trigger type:
 
 | Trigger | Required Evidence |
@@ -871,20 +973,25 @@ Evidence is stored in `ProjectMemory`'s artifact index (see Phase 2, section 2.3
 Task execution proceeds normally
   → Failure condition detected (weak signal with corroboration, or strong signal)
     → Orchestrator packages evidence bundle into PlanRevisionTrigger
-      → Check revision count against BOTH limits:
-        - maxRevisionsPerSprint (default: 3)
-        - maxRevisionsPerStory (default: 2)
-        if either exceeded → Escalate to human review, halt affected story
-        if within limits:
-          → ArchitecturePlannerAgent.execute(mode='revision', trigger, currentPlan)
-            → Produces new ArchitecturePlan with supersedesPlanId = currentPlan.planId
-            → New ArchitectureDecision entry: reason for change, impact description
-            → Deterministic validation (same checks as initial plan)
-          → TaskDecomposer re-runs against revised plan
-            → Produces updated SprintTaskPlan
-            → Completed tasks are preserved; only affected tasks are regenerated
-          → Execution resumes with revised plan
+      → Classify trigger: 'sprint' or 'global'
+      → If global: require human approval before proceeding
+      → If sprint:
+          → Check maxRevisionsPerSprint (default: 1) and maxRevisionsPerStory (default: 1)
+          → If exceeded: require human approval before proceeding
+          → If within limits:
+              → ArchitecturePlannerAgent.execute(mode='revision', trigger, sprintPlan)
+                → Produces superseding sprint ArchitecturePlan
+                → New ArchitectureDecision entry: reason for change, impact description
+                → Deterministic validation (same checks as initial plan)
+              → TaskDecomposer re-runs against revised sprint plan
+                → Produces updated SprintTaskPlan
+                → Completed tasks are preserved; only affected tasks are regenerated
+              → Execution resumes with revised sprint plan
 ```
+
+**Human approval gate**: After 1 sprint revision, the orchestrator pauses and presents the revised plan to the user via CLI: "Sprint plan revised (revision 1 of 1). Review changes? [y/N to continue, q to halt]". This prevents runaway replanning while keeping the system transparent.
+
+> **Deferred**: Domain-level revision scope, stale-child propagation across domain boundaries, and multi-level revision propagation are intentionally omitted from v1. Sprint-scope revision handles the majority of real-world architectural misalignments. Domain-level revision can be introduced when multi-service support (Phase 3) creates a concrete need for cross-domain revision coordination.
 
 #### Plan Version Pinning (Strengthened)
 
@@ -906,30 +1013,40 @@ interface ArchitecturePlan {
 }
 ```
 
+`revisionNumber` is tracked per `(level, scopeKey)` lineage — sprint and global plans each have independent revision counters.
+
 #### Integration with Orchestrator
 
 ```typescript
 // In planned-sprint mode orchestrator loop:
 interface PlannedSprintState {
-  currentPlan: ArchitecturePlan;
+  currentSprintPlan: ArchitecturePlan;   // active sprint-level plan
+  currentGlobalPlanId: string;           // active global plan reference
   taskPlan: SprintTaskPlan;
-  revisionCount: number;
-  maxRevisions: number;              // sprint-level cap, default 3
+  revisionCount: number;                 // sprint-level revision counter
+  maxRevisions: number;                  // default: 1 (human approval required after first revision)
   storyRevisionCounts: Map<string, number>;  // per-story revision counts
-  maxRevisionsPerStory: number;      // per-story cap, default 2
+  maxRevisionsPerStory: number;          // default: 1
 }
 
 // Pseudocode for revision check:
 // if (taskFailedAfterAllRetries || repeatedEnforcementBlocks || capabilityGap) {
-//   if (state.revisionCount >= state.maxRevisions) {
-//     escalateToHuman(trigger);
+//   const level: PlanRevisionLevel = classifyRevisionLevel(trigger, evidence);
+//   if (level === 'global') {
+//     requireHumanApproval(trigger); // global changes always require human approval
 //     return;
 //   }
-//   const revisedPlan = await planner.execute('revision', trigger, state.currentPlan);
+//   // Sprint-level revision:
+//   if (state.revisionCount >= state.maxRevisions) {
+//     requireHumanApproval(trigger); // exceeded 1 auto-revision; ask human before continuing
+//     return;
+//   }
+//   const revisedPlan = await planner.execute('revision', trigger, state.currentSprintPlan);
 //   const revisedTaskPlan = await decomposer.execute(revisedPlan, stories, completedTasks);
-//   state.currentPlan = revisedPlan;
+//   state.currentSprintPlan = revisedPlan;
 //   state.taskPlan = revisedTaskPlan;
 //   state.revisionCount++;
+//   presentRevisionSummaryToUser(revisedPlan); // show diff to user, allow abort
 // }
 ```
 
@@ -941,35 +1058,38 @@ interface PlannedSprintState {
 |---|---|
 | **Planner produces bad module decomposition** | Multi-pass design limits blast radius. Deterministic validation catches structural issues (cycles, unmapped stories). Human gate before execution (optional). |
 | **Task decomposition creates too many tasks** | Guardrails enforce limits (5/story, 50/sprint). Task merging reduces count. Human review when limits exceeded after merge. |
-| **Enforcement false positives** | Only check structural facts (imports, paths, exports). Semantic checks are advisory warnings, never blocking errors. |
+| **Enforcement false positives** | Only check 4 hard structural rules (imports, exports, file ownership, tech compliance). False positives from ambiguous semantic rules are avoided by design. |
 | **Parallel task file collisions** | `ownedFiles` rule with deterministic validation. No two parallel tasks may write the same file. |
-| **Plan drift across retries** | Plan version pinning. Developer retries validate against the same `planId`. Only orchestrator initiates revisions. |
+| **Plan drift across retries** | Plan version pinning. Developer retries validate against the same fixed `planId`. Only orchestrator initiates revisions. |
 | **Circular module dependencies** | Planner must output acyclic dependency graph. Deterministic validation rejects cycles. |
 | **Integration gaps** | Dedicated `IntegrationTask` type for system wiring (bootstrap, routing, DI). These run after module tasks. |
-| **Context overflow with large sprint batches** | Pass A compresses each story. If still too large, split into sub-batches by domain and merge plans. |
-| **Revision loop runaway** | Per-sprint cap (3) and per-story cap (2) on revisions. Exceeded → human escalation, not more replanning. |
+| **Context overflow with large sprint batches** | Pass A compresses each story. If still too large, split into sub-batches by execution group and merge plans. |
+| **Revision loop runaway** | 1 auto-revision per sprint/story, then human approval required. Global revisions always require human approval. Hard cap prevents silent architecture degradation. |
 | **Weak revision triggers (false positives)** | Developer retry exhaustion and enforcement blocks are weak signals — require corroborating evidence. Only capability gaps, drift, and sandbox constraints trigger directly. |
 | **Revision degrades architecture** | Revision fixes the *plan*, not rubber-stamps the Developer's output. Planner adjusts boundaries or adds modules — never removes constraints wholesale. |
 | **Guardrail defaults too restrictive** | All guardrails configurable via `OrchestratorConfig.guardrails`. Document escape hatches clearly. |
 
 ### Subsystem Definition of Done
 
-- [ ] `ArchitecturePlannerAgent` with three-pass design (fact extraction → synthesis → constraints)
-- [ ] `ArchitecturePlannerAgent` revision mode (receives trigger + current plan, produces superseding plan)
+- [ ] `ArchitecturePlannerAgent` with three-pass design at two levels (L0 global + L2 sprint)
+- [ ] `ArchitecturePlannerAgent` revision mode (receives trigger + current sprint plan, produces superseding plan)
 - [ ] Deterministic plan validation (schema, acyclicity, coverage)
-- [ ] `TaskDecomposer` producing `SprintTaskPlan` with capability-slice granularity
+- [ ] `TaskDecomposer` with deterministic first-pass (module map + story AC → tasks) + optional LLM enrichment for descriptions
+- [ ] `IntegrationPhase` model in `SprintTaskPlan` consolidating cross-cutting system wiring tasks
 - [ ] `DecompositionGuardrails` with configurable limits and task merging
 - [ ] File ownership validation (no parallel collisions)
 - [ ] `IntegrationTask` type for system wiring
-- [ ] `ArchitectureEnforcer` rules engine (dependency boundaries, tech compliance, directory conventions, required exports, file ownership)
+- [ ] `ArchitectureEnforcer` rules engine (4 hard rules: dependency boundaries, required exports, file ownership, technology compliance)
 - [ ] Enforcer → Developer feedback loop integrated into orchestrator retry logic
-- [ ] `PlanRevisionTrigger` emission from orchestrator (all 5 trigger types)
-- [ ] Per-sprint and per-story revision caps with human escalation
+- [ ] `PlanRevisionTrigger` emission from orchestrator (all 5 trigger types) + sprint/global classification
+- [ ] `EvidenceSummary` generation from raw artifact evidence for planner input
+- [ ] Sprint and per-story revision cap (default: 1) with human approval gate after first revision
+- [ ] Global revision always requires human approval
 - [ ] `HandoffDocument` extended with typed artifact references (backward compatible)
 - [ ] `executionMode: 'story' | 'planned-sprint'` flag in `OrchestratorConfig`
 - [ ] Existing tests unaffected; new tests cover all subsystems including revision loop
 - [ ] End-to-end: 3 stories → planner → decomposer → per-task dev → enforcer → QA → per-story TW/PR
-- [ ] End-to-end: task failure triggers plan revision → re-decompose → resume
+- [ ] End-to-end: task failure triggers plan revision → human approval → re-decompose → resume
 
 ---
 
@@ -979,7 +1099,7 @@ interface PlannedSprintState {
 
 **Timeline**: 2–3 weeks
 
-**Prerequisites**: Phase 1 (sandbox execution) + the four foundational subsystems (architecture planning, task decomposition, enforcement, revision loop). Phase 2 builds ON TOP of the subsystems — the `ArchitecturePlan` becomes the source of truth for cross-story coordination, and `ProjectMemory` records the plan's decisions for future sprints.
+**Prerequisites**: Phase 1 (sandbox execution) + the four foundational subsystems (architecture planning, task decomposition, enforcement, revision loop). Phase 2 builds ON TOP of the subsystems — the active `ArchitecturePlan` artifacts (global + sprint) become the source of truth for cross-story coordination, and `ProjectMemory` records plan decisions for future sprints.
 
 **Why this is after the subsystems**: The subsystems solve "how do we plan coherently across stories." Phase 2 solves "how do we remember what we built and reuse it." Without the planning layer, cross-story awareness is just shared files with no coherent structure.
 
@@ -1061,13 +1181,18 @@ interface ArtifactEntry {
   id: string;                   // artifact identifier (e.g., planId, reportId)
   path: string;                 // relative path to the artifact file in the workspace
   createdAt: string;
-  sprintId: string;
+  planLevel?: 'global' | 'sprint';
+  scopeKey?: string;            // "global" | "sprint:<id>"
+  sprintId?: string;
   relatedStories: string[];     // storyIds this artifact relates to
   supersedes?: string;          // ID of the artifact this replaces (for plan revisions)
+  parentRef?: string;           // parent plan ID for sprint → global traceability
 }
 
 type ArtifactType =
-  | 'architecture-plan'
+  | 'global-architecture-plan'
+  | 'sprint-architecture-plan'
+  | 'architecture-plan'         // legacy alias for backward compatibility
   | 'sprint-task-plan'
   | 'enforcement-report'
   | 'sandbox-result'
@@ -1076,9 +1201,11 @@ type ArtifactType =
   | 'revision-trigger';
 ```
 
-The artifact index is **append-only** — entries are never deleted, only superseded. This provides a complete audit trail of planning decisions and execution outcomes across sprints. Future agents can query "which architecture plan was active when story X was implemented?" or "what enforcement violations occurred in the last 3 sprints?"
+The artifact index is **append-only** — entries are never deleted, only superseded. This provides a complete audit trail of planning decisions and execution outcomes across sprints.
 
 Artifact files themselves are stored at their `path` location; the index stores only pointers. This keeps the index lightweight (typically <100KB even for large projects) while preserving access to full artifact content when needed.
+
+> **Deferred**: Artifact lifecycle states (`active`/`stale`/`archived`), configurable archival windows, and compressed archive storage are intentionally omitted from v1. The append-only index with a simple 5-sprint log retention (configured for execution logs, see Infrastructure section) is sufficient for the initial implementation. Lifecycle management can be added when project memory grows large enough to warrant it.
 
 **Why JSON over a database**: Splinty is a local CLI tool. JSON files are debuggable, version-controllable, and require zero infrastructure. If the project memory grows too large for a single JSON file, split by domain (one file per service/module).
 
@@ -1403,22 +1530,21 @@ Extend the basic 5-sprint retention from the infrastructure layer:
 10. `splinty status --metrics` CLI command
 
 ### Foundational Subsystems (recommended order — after Phase 1, before Phase 2)
-1. `ArchitecturePlan` schema + Zod validation + persistence
-2. `ArchitecturePlannerAgent` Pass A (story fact extraction)
-3. `ArchitecturePlannerAgent` Pass B (module/interface synthesis)
-4. `ArchitecturePlannerAgent` Pass C (constraints + execution groups)
-5. Deterministic plan validation (acyclicity, coverage, schema)
-6. `SprintTaskPlan` schema + `TaskDecomposer` agent
-7. `DecompositionGuardrails` (limits, task merging, human escalation)
-8. File ownership validation + `IntegrationTask` type
-9. `ArchitectureEnforcer` rules engine (import analysis, tech compliance, directory checks)
-10. Telemetry collection hooks in enforcer (violation counts, drift score, compliance metrics)
-11. Enforcer → Developer feedback loop in orchestrator
-12. `PlanRevisionTrigger` schema + trigger detection logic (all 5 trigger types)
-13. `ArchitecturePlannerAgent` revision mode + evidence packaging
-14. Revision loop integration in orchestrator (caps, escalation, re-decomposition)
-15. `executionMode` flag + `HandoffDocument` schema extension
-16. Orchestrator integration (`planned-sprint` mode end-to-end)
+1. Two-level `ArchitecturePlan` schema (`level: 'global' | 'sprint'`, `parentPlanId`, `scopeKey`) + Zod validation + persistence
+2. `ArchitecturePlannerAgent` L0 Global pass set (fact extraction, synthesis, constraints)
+3. `ArchitecturePlannerAgent` L2 Sprint pass set (execution-facing plan derived from global)
+4. Deterministic plan validation (acyclicity, coverage, schema)
+5. `SprintTaskPlan` schema + deterministic `TaskDecomposer` first-pass (module map → tasks) + optional LLM enrichment
+6. `DecompositionGuardrails` (limits, task merging, human escalation)
+7. File ownership validation + `IntegrationTask` type
+8. `ArchitectureEnforcer` rules engine (4 hard rules: dependency boundaries, required exports, file ownership, tech compliance)
+9. Telemetry collection hooks in enforcer (violation counts, compliance metrics)
+10. Enforcer → Developer feedback loop in orchestrator
+11. `PlanRevisionTrigger` schema + trigger detection logic + sprint/global classification
+12. `ArchitecturePlannerAgent` revision mode + evidence packaging
+13. Revision loop integration in orchestrator (sprint cap=1, human approval gate, re-decomposition)
+14. `executionMode` flag + `HandoffDocument` schema extension
+15. Orchestrator integration (`planned-sprint` mode end-to-end)
 
 ### Phase 2 (recommended order)
 1. `ProjectWorkspace` shared layer + file promotion on story completion
