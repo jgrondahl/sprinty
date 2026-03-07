@@ -9,6 +9,9 @@ An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [LLM Providers](#llm-providers)
+  - [Anthropic (default)](#anthropic-default)
+  - [GitHub Copilot](#github-copilot)
 - [Commands](#commands)
   - [init](#init)
   - [run](#run)
@@ -68,6 +71,83 @@ cp .env.example .env
 | `JIRA_API_TOKEN`      | `--source jira`      | Jira API token                                   |
 | `GITHUB_TOKEN`        | `--source github`    | GitHub personal access token (`ghp_...`)         |
 | `SPLINTY_WORKSPACE_DIR` | No                 | Where workspaces and the sprint ledger are stored (default: `.splinty`) |
+
+---
+
+## LLM Providers
+
+Splinty supports two LLM backends. The default is Anthropic (Claude). GitHub Copilot is an alternative that uses your existing paid Copilot subscription — no separate API key required.
+
+### Anthropic (default)
+
+Set `ANTHROPIC_API_KEY` in your `.env`. No further setup needed — all agents use Claude by default.
+
+### GitHub Copilot
+
+Splinty authenticates to the GitHub Copilot API using the same **OAuth device flow** as OpenCode and the GitHub CLI. This requires a paid Copilot subscription (Pro, Pro+, Business, or Enterprise).
+
+#### Step 1 — Authenticate
+
+Run the auth flow once. Splinty will print a URL and a one-time code:
+
+```bash
+splinty auth
+```
+
+```
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: ABCD-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+```
+
+The resulting token is stored at `~/.splinty/copilot-token.json` and reused on all subsequent runs — you do not need to re-authenticate unless the token is revoked.
+
+#### Step 2 — Use `GitHubCopilotClient` in your code
+
+```typescript
+import { GitHubCopilotClient } from '@splinty/agents';
+import { SprintOrchestrator } from '@splinty/agents';
+
+const copilot = new GitHubCopilotClient(); // reads token from ~/.splinty/copilot-token.json
+
+const orch = new SprintOrchestrator({
+  projectId: 'my-app',
+  defaultClient: copilot,  // use Copilot for all agents
+});
+```
+
+Per-agent overrides are also supported — e.g. run QA on Copilot and everything else on Anthropic:
+
+```typescript
+import { AgentPersona } from '@splinty/core';
+
+const orch = new SprintOrchestrator({
+  projectId: 'my-app',
+  clients: {
+    [AgentPersona.QA_ENGINEER]: new GitHubCopilotClient(),
+  },
+  // all other agents fall back to AnthropicClient (reads ANTHROPIC_API_KEY)
+});
+```
+
+#### Re-authenticating
+
+```bash
+splinty auth          # no-op if already authenticated
+splinty auth --force  # force a new device flow even if a token exists
+splinty auth --logout # remove the stored token
+```
+
+#### Token storage
+
+| Path | Contents |
+|---|---|
+| `~/.splinty/copilot-token.json` | Cached OAuth access token |
+
+The token grants `read:user` scope. It does not expire on a fixed schedule, but GitHub can revoke it at any time (e.g. if you revoke the app in your [GitHub settings](https://github.com/settings/apps/authorizations)). If a request returns `401`, Splinty clears the cached token and tells you to run `splinty auth` again.
 
 ---
 
