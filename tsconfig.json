@@ -6,14 +6,12 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "types": ["bun-types"],
     "baseUrl": ".",
     "paths": {
-      "@splinty/core": ["packages/core/src/index.ts"],
-      "@splinty/agents": ["packages/agents/src/index.ts"],
-      "@splinty/integrations": ["packages/integrations/src/index.ts"]
-    },
-    "outDir": "dist"
-  },
-  "include": ["packages/*/src/**/*"],
-  "exclude": ["node_modules", "dist"]
+      "@splinty/core": ["packages/core/src"],
+      "@splinty/agents": ["packages/agents/src"],
+      "@splinty/integrations": ["packages/integrations/src"]
+    }
+  }
 }

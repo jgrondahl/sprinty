@@ -5,3 +5,12 @@ dist/
 .splinty/
 coverage/
 *.lcov
+
+# Compiled output that may leak into src trees
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+packages/*/src/**/*.js.map
+
+# Scratch scripts
+*.ps1
