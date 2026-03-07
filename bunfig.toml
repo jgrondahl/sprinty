@@ -2,3 +2,4 @@
 coverage = true
 coverageThreshold = 0.8
 coverageReporter = ["text", "lcov"]
+exclude = ["**/dist/**", "**/.splinty/**"]
