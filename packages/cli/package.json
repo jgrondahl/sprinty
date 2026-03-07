@@ -1,0 +1,12 @@
+{
+  "name": "@splinty/cli",
+  "version": "0.1.0",
+  "main": "./src/index.ts",
+  "bin": {
+    "splinty": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "test": "bun test"
+  }
+}

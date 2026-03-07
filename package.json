@@ -1,0 +1,23 @@
+{
+  "name": "splinty",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter='*' build",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "@mastra/core": "^0.10.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "zod": "^3.23.0",
+    "simple-git": "^3.27.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "bun-types": "latest"
+  }
+}
