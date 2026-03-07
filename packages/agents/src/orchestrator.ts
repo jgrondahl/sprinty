@@ -41,6 +41,17 @@ export interface OrchestratorConfig {
    * ```
    */
   clients?: Partial<Record<AgentPersona, LlmClient>>;
+  /**
+   * Override the model used by all agents (unless a per-persona override is set).
+   * Useful when switching providers — e.g. GitHub Copilot uses 'gpt-4o' instead
+   * of Anthropic model strings like 'claude-3-5-sonnet-20241022'.
+   */
+  defaultModel?: string;
+  /**
+   * Override the model used by lightweight agents (currently QA_ENGINEER).
+   * Defaults to the same as defaultModel when set, or the built-in default.
+   */
+  lightModel?: string;
   /** Injectable git factory — forwarded to DeveloperAgent */
   gitFactory?: Parameters<DeveloperAgent['setGitFactory']>[0];
   /** Injectable GitHub PR creator — called after QA PASS */
@@ -63,27 +74,23 @@ function makeConfig(persona: AgentPersona, model: string): AgentConfig {
   };
 }
 
-const AGENT_CONFIGS: Record<AgentPersona, AgentConfig> = {
-  [AgentPersona.BUSINESS_OWNER]: makeConfig(
-    AgentPersona.BUSINESS_OWNER,
-    'claude-3-5-sonnet-20241022'
-  ),
-  [AgentPersona.PRODUCT_OWNER]: makeConfig(
-    AgentPersona.PRODUCT_OWNER,
-    'claude-3-5-sonnet-20241022'
-  ),
-  [AgentPersona.ARCHITECT]: makeConfig(AgentPersona.ARCHITECT, 'claude-3-5-sonnet-20241022'),
-  [AgentPersona.DEVELOPER]: makeConfig(AgentPersona.DEVELOPER, 'claude-3-5-sonnet-20241022'),
-  [AgentPersona.SOUND_ENGINEER]: makeConfig(
-    AgentPersona.SOUND_ENGINEER,
-    'claude-3-5-sonnet-20241022'
-  ),
-  [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, 'claude-3-haiku-20240307'),
-  [AgentPersona.ORCHESTRATOR]: makeConfig(
-    AgentPersona.ORCHESTRATOR,
-    'claude-3-5-sonnet-20241022'
-  ),
-};
+const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+const DEFAULT_LIGHT_MODEL = 'claude-3-haiku-20240307';
+
+function buildAgentConfigs(
+  model: string = DEFAULT_MODEL,
+  lightModel: string = DEFAULT_LIGHT_MODEL,
+): Record<AgentPersona, AgentConfig> {
+  return {
+    [AgentPersona.BUSINESS_OWNER]: makeConfig(AgentPersona.BUSINESS_OWNER, model),
+    [AgentPersona.PRODUCT_OWNER]: makeConfig(AgentPersona.PRODUCT_OWNER, model),
+    [AgentPersona.ARCHITECT]: makeConfig(AgentPersona.ARCHITECT, model),
+    [AgentPersona.DEVELOPER]: makeConfig(AgentPersona.DEVELOPER, model),
+    [AgentPersona.SOUND_ENGINEER]: makeConfig(AgentPersona.SOUND_ENGINEER, model),
+    [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, lightModel),
+    [AgentPersona.ORCHESTRATOR]: makeConfig(AgentPersona.ORCHESTRATOR, model),
+  };
+}
 
 // ─── SprintOrchestrator ───────────────────────────────────────────────────────
 
@@ -141,13 +148,13 @@ export class SprintOrchestrator {
     // Register story in ledger
     this.ledger.upsertStory(this.config.projectId, story);
 
-    // Build shared agent dependencies
-    // Resolve client for each persona: per-persona override → defaultClient → AnthropicClient default
+    const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
+
     const clientFor = (persona: AgentPersona): LlmClient | undefined =>
       this.config.clients?.[persona] ?? this.config.defaultClient;
 
     const biz = new BusinessOwnerAgent(
-      AGENT_CONFIGS[AgentPersona.BUSINESS_OWNER]!,
+      agentConfigs[AgentPersona.BUSINESS_OWNER]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.BUSINESS_OWNER)
@@ -155,7 +162,7 @@ export class SprintOrchestrator {
     biz.setWorkspace(ws);
 
     const po = new ProductOwnerAgent(
-      AGENT_CONFIGS[AgentPersona.PRODUCT_OWNER]!,
+      agentConfigs[AgentPersona.PRODUCT_OWNER]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.PRODUCT_OWNER)
@@ -163,7 +170,7 @@ export class SprintOrchestrator {
     po.setWorkspace(ws);
 
     const architect = new ArchitectAgent(
-      AGENT_CONFIGS[AgentPersona.ARCHITECT]!,
+      agentConfigs[AgentPersona.ARCHITECT]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.ARCHITECT)
@@ -171,7 +178,7 @@ export class SprintOrchestrator {
     architect.setWorkspace(ws);
 
     const dev = new DeveloperAgent(
-      AGENT_CONFIGS[AgentPersona.DEVELOPER]!,
+      agentConfigs[AgentPersona.DEVELOPER]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.DEVELOPER)
@@ -180,7 +187,7 @@ export class SprintOrchestrator {
     if (this.config.gitFactory) dev.setGitFactory(this.config.gitFactory);
 
     const soundEng = new SoundEngineerAgent(
-      AGENT_CONFIGS[AgentPersona.SOUND_ENGINEER]!,
+      agentConfigs[AgentPersona.SOUND_ENGINEER]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.SOUND_ENGINEER)
@@ -188,7 +195,7 @@ export class SprintOrchestrator {
     soundEng.setWorkspace(ws);
 
     const qa = new QAEngineerAgent(
-      AGENT_CONFIGS[AgentPersona.QA_ENGINEER]!,
+      agentConfigs[AgentPersona.QA_ENGINEER]!,
       this.workspaceMgr,
       this.handoffMgr,
       clientFor(AgentPersona.QA_ENGINEER)
