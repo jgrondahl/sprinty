@@ -120,6 +120,11 @@ const qaPassResp = {
   report: '# QA Report\n\nVerdict: PASS',
 };
 
+const readmeResp = {
+  readme: '# Login Service\n\nA JWT-based login service.\n\n## Usage\n\n```bash\nbun run start\n```\n\n## Testing\n\n```bash\nbun test\n```',
+  additionalDocs: [],
+};
+
 const qaFailResp = {
   passedAC: [],
   failedAC: ['Given valid creds, When I submit, Then I receive JWT'],
@@ -167,7 +172,7 @@ afterEach(() => {
 describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
   it('runs full pipeline and returns AppBuilderResult', async () => {
     // Queue: biz, po, arch, dev, qa
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
@@ -186,7 +191,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
   });
 
   it('story reaches PR_OPEN state in workspace', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
@@ -209,7 +214,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
   });
 
   it('AGENTS.md is created and contains the story', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
@@ -225,7 +230,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
   });
 
   it('commitSha is captured from Developer git commit', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
@@ -239,7 +244,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
   });
 
   it('calls createPullRequest hook and captures prUrl', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
     let prCreated = false;
 
     const orch = new SprintOrchestrator({
@@ -266,7 +271,7 @@ describe('SprintOrchestrator — audio story', () => {
     // Queue: biz, po, arch(audio), soundEng, dev, qa
     const callLog = { calls: 0 };
     const client = makeQueuedClient(
-      [bizResp, poResp, archAudioResp, soundEngResp, devResp, qaPassResp],
+      [bizResp, poResp, archAudioResp, soundEngResp, devResp, qaPassResp, readmeResp],
       callLog
     );
 
@@ -278,8 +283,7 @@ describe('SprintOrchestrator — audio story', () => {
     });
 
     const results = await orch.run([makeAudioStory()]);
-    // 6 LLM calls: biz + po + arch + soundEng + dev + qa
-    expect(callLog.calls).toBe(6);
+    expect(callLog.calls).toBe(7);
     expect(results[0]!.testResults.failed).toBe(0);
   });
 });
@@ -292,7 +296,7 @@ describe('SprintOrchestrator — per-story isolation', () => {
     // story-B will succeed via a queued-response client.
     // Both share the same client but the throw is deterministic: any message mentioning
     // "Failing story" triggers the error; everything else returns the next queued response.
-    const storyBQueue = [bizResp, poResp, archResp, devResp, qaPassResp];
+    const storyBQueue = [bizResp, poResp, archResp, devResp, qaPassResp, readmeResp];
     let storyBIdx = 0;
     const client: LlmClient = {
       complete: async (req) => {
@@ -333,9 +337,9 @@ describe('SprintOrchestrator — per-story isolation', () => {
     // Two identical stories processed in parallel
     const client = makeQueuedClient([
       // story 1 pipeline
-      bizResp, poResp, archResp, devResp, qaPassResp,
+      bizResp, poResp, archResp, devResp, qaPassResp, readmeResp,
       // story 2 pipeline
-      bizResp, poResp, archResp, devResp, qaPassResp,
+      bizResp, poResp, archResp, devResp, qaPassResp, readmeResp,
     ]);
 
     const stories = [
@@ -375,7 +379,7 @@ describe('SprintOrchestrator — QA rework loop', () => {
 
   it('QA FAIL triggers developer rework, then PASS succeeds', async () => {
     // biz, po, arch, dev(1st), qa(fail), dev(2nd rework), qa(pass)
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaFailResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaFailResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
@@ -393,7 +397,7 @@ describe('SprintOrchestrator — QA rework loop', () => {
 
 describe('SprintOrchestrator — ledger init', () => {
   it('creates AGENTS.md even if projectId directory does not exist', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const orch = new SprintOrchestrator({
       projectId: 'brand-new-project',

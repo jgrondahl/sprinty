@@ -108,6 +108,11 @@ const qaPassResp = {
   report: '# QA Report\n\nVerdict: PASS — all acceptance criteria met.',
 };
 
+const readmeResp = {
+  readme: '# Login Service\n\nA JWT-based login service.\n\n## Usage\n\n```bash\nbun run start\n```\n\n## Testing\n\n```bash\nbun test\n```',
+  additionalDocs: [],
+};
+
 // ─── Fixture path ─────────────────────────────────────────────────────────────
 
 const FIXTURE_PATH = path.resolve(__dirname, 'fixtures', 'sample-story.md');
@@ -144,7 +149,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
   });
 
   it('full pipeline: story reaches PR_OPEN state', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const connector = new FileConnector();
     const stories = connector.parse(FIXTURE_PATH);
@@ -173,7 +178,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
   });
 
   it('workspace directory structure is created (handoffs/, artifacts/, agent.log)', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const connector = new FileConnector();
     const stories = connector.parse(FIXTURE_PATH);
@@ -203,7 +208,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
   });
 
   it('AGENTS.md is created and contains the story entry', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const connector = new FileConnector();
     const stories = connector.parse(FIXTURE_PATH);
@@ -227,7 +232,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
   });
 
   it('result contains commitSha from Developer git commit', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const connector = new FileConnector();
     const stories = connector.parse(FIXTURE_PATH);
@@ -244,7 +249,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
   });
 
   it('createPullRequest hook is called and prUrl is non-empty', async () => {
-    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
 
     const connector = new FileConnector();
     const stories = connector.parse(FIXTURE_PATH);

@@ -151,10 +151,11 @@ describe('StoryState enum', () => {
 });
 
 describe('AgentPersona enum', () => {
-  it('has all 7 personas', () => {
+  it('has all 8 personas', () => {
     const personas = Object.values(AgentPersona);
-    expect(personas).toHaveLength(7);
+    expect(personas).toHaveLength(8);
     expect(personas).toContain('ORCHESTRATOR');
     expect(personas).toContain('SOUND_ENGINEER');
+    expect(personas).toContain('TECHNICAL_WRITER');
   });
 });

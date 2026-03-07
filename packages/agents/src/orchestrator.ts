@@ -18,6 +18,7 @@ import {
   DeveloperAgent,
   SoundEngineerAgent,
   QAEngineerAgent,
+  TechnicalWriterAgent,
   AgentCallError,
 } from './index';
 
@@ -88,6 +89,7 @@ function buildAgentConfigs(
     [AgentPersona.DEVELOPER]: makeConfig(AgentPersona.DEVELOPER, model),
     [AgentPersona.SOUND_ENGINEER]: makeConfig(AgentPersona.SOUND_ENGINEER, model),
     [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, lightModel),
+    [AgentPersona.TECHNICAL_WRITER]: makeConfig(AgentPersona.TECHNICAL_WRITER, model),
     [AgentPersona.ORCHESTRATOR]: makeConfig(AgentPersona.ORCHESTRATOR, model),
   };
 }
@@ -202,6 +204,14 @@ export class SprintOrchestrator {
     );
     qa.setWorkspace(ws);
 
+    const techWriter = new TechnicalWriterAgent(
+      agentConfigs[AgentPersona.TECHNICAL_WRITER]!,
+      this.workspaceMgr,
+      this.handoffMgr,
+      clientFor(AgentPersona.TECHNICAL_WRITER)
+    );
+    techWriter.setWorkspace(ws);
+
     // ── Pipeline execution ─────────────────────────────────────────────────
 
     let currentStory = story;
@@ -268,7 +278,11 @@ export class SprintOrchestrator {
       this.updateLedger(currentStory, AgentPersona.DEVELOPER);
     }
 
-    // Step 8: DONE → PR_OPEN
+    // Step 8: README generation (Technical Writer)
+    handoff = await techWriter.execute(handoff, currentStory);
+    this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
+
+    // Step 9: DONE → PR_OPEN
     const branchName = handoff.stateOfWorld['branchName'] ?? `story/${story.id}`;
     const commitSha = handoff.stateOfWorld['commitSha'] ?? '';
 
