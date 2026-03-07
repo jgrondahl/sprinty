@@ -13,6 +13,7 @@ import {
   type Story,
   type HandoffDocument,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -99,16 +100,14 @@ const blockedVerdict = {
   report: '# QA Report\n\n## Verdict: BLOCKED\n\nSource files not found.',
 };
 
-function makeMockClient(response: object | Error, callCount?: { n: number }) {
+function makeMockClient(response: object | Error, callCount?: { n: number }): LlmClient {
   return {
-    messages: {
-      create: async () => {
-        if (callCount) callCount.n++;
-        if (response instanceof Error) throw response;
-        return { content: [{ type: 'text', text: JSON.stringify(response) }] };
-      },
+    complete: async () => {
+      if (callCount) callCount.n++;
+      if (response instanceof Error) throw response;
+      return JSON.stringify(response);
     },
-  } as never;
+  };
 }
 
 let tmpDir: string;
@@ -293,11 +292,9 @@ describe('QAEngineerAgent — BLOCKED verdict', () => {
 
 describe('QAEngineerAgent — error handling', () => {
   it('throws on non-JSON response', async () => {
-    const bad = {
-      messages: {
-        create: async () => ({ content: [{ type: 'text', text: 'not json' }] }),
-      },
-    } as never;
+    const bad: LlmClient = {
+      complete: async () => 'not json',
+    };
 
     const agent = new QAEngineerAgent(agentConfig, wsMgr, handoffMgr, bad);
     agent.setWorkspace(ws);
@@ -322,13 +319,9 @@ describe('QAEngineerAgent — error handling', () => {
   });
 
   it('handles fenced JSON from Claude', async () => {
-    const fenced = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: `\`\`\`json\n${JSON.stringify(passVerdict)}\n\`\`\`` }],
-        }),
-      },
-    } as never;
+    const fenced: LlmClient = {
+      complete: async () => `\`\`\`json\n${JSON.stringify(passVerdict)}\n\`\`\``,
+    };
 
     const agent = new QAEngineerAgent(agentConfig, wsMgr, handoffMgr, fenced);
     agent.setWorkspace(ws);

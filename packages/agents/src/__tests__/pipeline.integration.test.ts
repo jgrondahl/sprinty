@@ -13,22 +13,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { SprintOrchestrator } from '../orchestrator';
-import { StoryState } from '@splinty/core';
+import { StoryState, type LlmClient } from '@splinty/core';
 import { FileConnector } from '@splinty/integrations';
 
-// ─── Queued mock Anthropic client (same pattern as orchestrator.test.ts) ──────
+// ─── Queued mock LlmClient (same pattern as orchestrator.test.ts) ──────────────
 
 type MockResponse = object;
 
-function makeQueuedClient(queue: MockResponse[]) {
+function makeQueuedClient(queue: MockResponse[]): LlmClient {
   let idx = 0;
   return {
-    messages: {
-      create: async () => {
-        const resp = queue[idx] ?? queue[queue.length - 1]!;
-        idx++;
-        return { content: [{ type: 'text', text: JSON.stringify(resp) }] };
-      },
+    complete: async () => {
+      const resp = queue[idx] ?? queue[queue.length - 1]!;
+      idx++;
+      return JSON.stringify(resp);
     },
   };
 }
@@ -154,7 +152,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
     const orch = new SprintOrchestrator({
       projectId: 'pipeline-test',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -183,7 +181,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
     const orch = new SprintOrchestrator({
       projectId: 'pipeline-test',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -213,7 +211,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
     const orch = new SprintOrchestrator({
       projectId: 'pipeline-test',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -237,7 +235,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
     const orch = new SprintOrchestrator({
       projectId: 'pipeline-test',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -255,7 +253,7 @@ describe('Pipeline Integration — FileConnector → SprintOrchestrator', () => 
     const orch = new SprintOrchestrator({
       projectId: 'pipeline-test',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
       createPullRequest: async () => {
         hookCalled = true;

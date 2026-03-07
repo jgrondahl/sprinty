@@ -13,6 +13,7 @@ import {
   type Story,
   type HandoffDocument,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -104,16 +105,14 @@ const tsAudioResponse = {
   integrationInterface: 'Direct TypeScript import',
 };
 
-function makeMockClient(response: object | Error, callCount?: { n: number }) {
+function makeMockClient(response: object | Error, callCount?: { n: number }): LlmClient {
   return {
-    messages: {
-      create: async () => {
-        if (callCount) callCount.n++;
-        if (response instanceof Error) throw response;
-        return { content: [{ type: 'text', text: JSON.stringify(response) }] };
-      },
+    complete: async () => {
+      if (callCount) callCount.n++;
+      if (response instanceof Error) throw response;
+      return JSON.stringify(response);
     },
-  } as never;
+  };
 }
 
 let tmpDir: string;
@@ -235,11 +234,9 @@ describe('SoundEngineerAgent — TypeScript audio path', () => {
 
 describe('SoundEngineerAgent — error handling', () => {
   it('throws on non-JSON response', async () => {
-    const bad = {
-      messages: {
-        create: async () => ({ content: [{ type: 'text', text: 'not json' }] }),
-      },
-    } as never;
+    const bad: LlmClient = {
+      complete: async () => 'not json',
+    };
 
     const agent = new SoundEngineerAgent(agentConfig, wsMgr, handoffMgr, bad);
     agent.setWorkspace(ws);

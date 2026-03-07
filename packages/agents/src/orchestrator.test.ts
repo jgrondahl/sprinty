@@ -7,6 +7,7 @@ import {
   StoryState,
   StorySource,
   type Story,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -39,24 +40,22 @@ function makeAudioStory(): Story {
   });
 }
 
-// ─── Mock Anthropic client ────────────────────────────────────────────────────
+// ─── Mock LlmClient ────────────────────────────────────────────────────────────
 //
 // The orchestrator passes this single client to ALL agents. Each agent's
-// callClaude() will call anthropic.messages.create(). We use a queue so
-// successive calls return the right JSON for each pipeline stage.
+// callLlm() will call client.complete(). We use a queue so successive calls
+// return the right JSON for each pipeline stage.
 
 type MockResponse = object;
 
-function makeQueuedClient(queue: MockResponse[], callLog?: { calls: number }) {
+function makeQueuedClient(queue: MockResponse[], callLog?: { calls: number }): LlmClient {
   let idx = 0;
   return {
-    messages: {
-      create: async () => {
-        if (callLog) callLog.calls++;
-        const resp = queue[idx] ?? queue[queue.length - 1]!;
-        idx++;
-        return { content: [{ type: 'text', text: JSON.stringify(resp) }] };
-      },
+    complete: async () => {
+      if (callLog) callLog.calls++;
+      const resp = queue[idx] ?? queue[queue.length - 1]!;
+      idx++;
+      return JSON.stringify(resp);
     },
   };
 }
@@ -173,7 +172,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -192,7 +191,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -215,7 +214,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -231,7 +230,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -246,7 +245,7 @@ describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
       createPullRequest: async () => {
         prCreated = true;
@@ -274,7 +273,7 @@ describe('SprintOrchestrator — audio story', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -295,17 +294,15 @@ describe('SprintOrchestrator — per-story isolation', () => {
     // "Failing story" triggers the error; everything else returns the next queued response.
     const storyBQueue = [bizResp, poResp, archResp, devResp, qaPassResp];
     let storyBIdx = 0;
-    const client = {
-      messages: {
-        create: async (params: { messages: Array<{ content: string }> }) => {
-          const text = params?.messages?.[0]?.content ?? '';
-          if (text.includes('Failing story')) {
-            throw new Error('Claude API failure for story-A');
-          }
-          const resp = storyBQueue[storyBIdx] ?? storyBQueue[storyBQueue.length - 1]!;
-          storyBIdx++;
-          return { content: [{ type: 'text', text: JSON.stringify(resp) }] };
-        },
+    const client: LlmClient = {
+      complete: async (req) => {
+        const text = req.userMessage ?? '';
+        if (text.includes('Failing story')) {
+          throw new Error('LLM failure for story-A');
+        }
+        const resp = storyBQueue[storyBIdx] ?? storyBQueue[storyBQueue.length - 1]!;
+        storyBIdx++;
+        return JSON.stringify(resp);
       },
     };
 
@@ -315,7 +312,7 @@ describe('SprintOrchestrator — per-story isolation', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -349,7 +346,7 @@ describe('SprintOrchestrator — per-story isolation', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -368,7 +365,7 @@ describe('SprintOrchestrator — QA rework loop', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -383,7 +380,7 @@ describe('SprintOrchestrator — QA rework loop', () => {
     const orch = new SprintOrchestrator({
       projectId: 'test-proj',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 
@@ -401,7 +398,7 @@ describe('SprintOrchestrator — ledger init', () => {
     const orch = new SprintOrchestrator({
       projectId: 'brand-new-project',
       workspaceBaseDir: tmpDir,
-      anthropicClient: client,
+      defaultClient: client,
       gitFactory: makeMockGit(),
     });
 

@@ -13,6 +13,7 @@ import {
   type Story,
   type HandoffDocument,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -72,15 +73,13 @@ const validResponse = {
   tags: ['audio', 'streaming', 'premium'],
 };
 
-function makeMockClient(response: object | Error) {
+function makeMockClient(response: object | Error): LlmClient {
   return {
-    messages: {
-      create: async () => {
-        if (response instanceof Error) throw response;
-        return { content: [{ type: 'text', text: JSON.stringify(response) }] };
-      },
+    complete: async () => {
+      if (response instanceof Error) throw response;
+      return JSON.stringify(response);
     },
-  } as never;
+  };
 }
 
 let tmpDir: string;
@@ -162,13 +161,9 @@ describe('ProductOwnerAgent', () => {
   });
 
   it('strips markdown code fences from Claude response', async () => {
-    const fencedClient = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: `\`\`\`json\n${JSON.stringify(validResponse)}\n\`\`\`` }],
-        }),
-      },
-    } as never;
+    const fencedClient: LlmClient = {
+      complete: async () => `\`\`\`json\n${JSON.stringify(validResponse)}\n\`\`\``,
+    };
 
     const agent = new ProductOwnerAgent(agentConfig, wsMgr, handoffMgr, fencedClient);
     agent.setWorkspace(ws);
@@ -178,13 +173,9 @@ describe('ProductOwnerAgent', () => {
   });
 
   it('throws when Claude returns non-JSON', async () => {
-    const badClient = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: 'not json at all' }],
-        }),
-      },
-    } as never;
+    const badClient: LlmClient = {
+      complete: async () => 'not json at all',
+    };
 
     const agent = new ProductOwnerAgent(agentConfig, wsMgr, handoffMgr, badClient);
     agent.setWorkspace(ws);

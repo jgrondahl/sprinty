@@ -13,6 +13,7 @@ import {
   type HandoffDocument,
   type Story,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 // ── Concrete test subclass ───────────────────────────────────────────────────
@@ -79,26 +80,22 @@ afterEach(() => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeMockAnthropicClient(responses: Array<string | Error>) {
+function makeMockLlmClient(responses: Array<string | Error>): LlmClient {
   let callIndex = 0;
   return {
-    messages: {
-      create: async () => {
-        const response = responses[callIndex++];
-        if (response instanceof Error) throw response;
-        return {
-          content: [{ type: 'text', text: response }],
-        };
-      },
+    complete: async () => {
+      const response = responses[callIndex++];
+      if (response instanceof Error) throw response;
+      return response as string;
     },
-  } as never;
+  };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('BaseAgent.callClaude() — retry logic', () => {
+describe('BaseAgent.callLlm() — retry logic', () => {
   it('succeeds on first attempt', async () => {
-    const client = makeMockAnthropicClient(['Hello from Claude']);
+    const client = makeMockLlmClient(['Hello from Claude']);
     const agent = new TestAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
 
@@ -107,7 +104,7 @@ describe('BaseAgent.callClaude() — retry logic', () => {
   });
 
   it('retries and succeeds on 3rd attempt', async () => {
-    const client = makeMockAnthropicClient([
+    const client = makeMockLlmClient([
       new Error('Overloaded'),
       new Error('Overloaded'),
       'Success on 3rd',
@@ -131,7 +128,7 @@ describe('BaseAgent.callClaude() — retry logic', () => {
   });
 
   it('throws AgentCallError after maxRetries failures', async () => {
-    const client = makeMockAnthropicClient([
+    const client = makeMockLlmClient([
       new Error('Fail 1'),
       new Error('Fail 2'),
       new Error('Fail 3'),
@@ -145,7 +142,7 @@ describe('BaseAgent.callClaude() — retry logic', () => {
   });
 
   it('AgentCallError message contains persona and attempt count', async () => {
-    const client = makeMockAnthropicClient([new Error('X'), new Error('X'), new Error('X')]);
+    const client = makeMockLlmClient([new Error('X'), new Error('X'), new Error('X')]);
     const agent = new TestAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
     // @ts-ignore
@@ -162,7 +159,7 @@ describe('BaseAgent.callClaude() — retry logic', () => {
   });
 
   it('writes to errors.log after all failures', async () => {
-    const client = makeMockAnthropicClient([new Error('Bad'), new Error('Bad'), new Error('Bad')]);
+    const client = makeMockLlmClient([new Error('Bad'), new Error('Bad'), new Error('Bad')]);
     const agent = new TestAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
     // @ts-ignore
@@ -183,7 +180,7 @@ describe('BaseAgent.callClaude() — retry logic', () => {
 
 describe('BaseAgent.buildHandoff()', () => {
   it('produces a valid HandoffDocument', async () => {
-    const client = makeMockAnthropicClient(['response text']);
+    const client = makeMockLlmClient(['response text']);
     const agent = new TestAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
 
@@ -197,7 +194,7 @@ describe('BaseAgent.buildHandoff()', () => {
 
 describe('BaseAgent.logActivity()', () => {
   it('writes to agent.log', async () => {
-    const client = makeMockAnthropicClient(['ok']);
+    const client = makeMockLlmClient(['ok']);
     const agent = new TestAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
 

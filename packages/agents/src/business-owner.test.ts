@@ -12,6 +12,7 @@ import {
   type AgentConfig,
   type Story,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -40,14 +41,10 @@ function makeRawStory(): Story {
   };
 }
 
-function makeMockClient(jsonResponse: Record<string, string>) {
+function makeMockClient(jsonResponse: Record<string, string>): LlmClient {
   return {
-    messages: {
-      create: async () => ({
-        content: [{ type: 'text', text: JSON.stringify(jsonResponse) }],
-      }),
-    },
-  } as never;
+    complete: async () => JSON.stringify(jsonResponse),
+  };
 }
 
 let tmpDir: string;
@@ -108,13 +105,9 @@ describe('BusinessOwnerAgent', () => {
   });
 
   it('throws on malformed JSON response', async () => {
-    const badClient = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: 'not valid json' }],
-        }),
-      },
-    } as never;
+    const badClient: LlmClient = {
+      complete: async () => 'not valid json',
+    };
 
     const agent = new BusinessOwnerAgent(agentConfig, wsMgr, handoffMgr, badClient);
     agent.setWorkspace(ws);
@@ -125,13 +118,9 @@ describe('BusinessOwnerAgent', () => {
   });
 
   it('handles markdown-fenced JSON from Claude', async () => {
-    const fencedClient = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: `\`\`\`json\n${JSON.stringify(validResponse)}\n\`\`\`` }],
-        }),
-      },
-    } as never;
+    const fencedClient: LlmClient = {
+      complete: async () => `\`\`\`json\n${JSON.stringify(validResponse)}\n\`\`\``,
+    };
 
     const agent = new BusinessOwnerAgent(agentConfig, wsMgr, handoffMgr, fencedClient);
     agent.setWorkspace(ws);

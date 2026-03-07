@@ -13,6 +13,7 @@ import {
   type Story,
   type HandoffDocument,
   type WorkspaceState,
+  type LlmClient,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -69,15 +70,13 @@ const validDevResponse = {
   summary: 'Implemented JWT login service with unit tests',
 };
 
-function makeMockClient(response: object | Error) {
+function makeMockClient(response: object | Error): LlmClient {
   return {
-    messages: {
-      create: async () => {
-        if (response instanceof Error) throw response;
-        return { content: [{ type: 'text', text: JSON.stringify(response) }] };
-      },
+    complete: async () => {
+      if (response instanceof Error) throw response;
+      return JSON.stringify(response);
     },
-  } as never;
+  };
 }
 
 // ─── Mock Git Factory ─────────────────────────────────────────────────────────
@@ -220,11 +219,9 @@ describe('DeveloperAgent', () => {
   });
 
   it('throws on non-JSON response', async () => {
-    const bad = {
-      messages: {
-        create: async () => ({ content: [{ type: 'text', text: 'not json' }] }),
-      },
-    } as never;
+    const bad: LlmClient = {
+      complete: async () => 'not json',
+    };
 
     const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, bad);
     agent.setWorkspace(ws);
@@ -235,13 +232,9 @@ describe('DeveloperAgent', () => {
   });
 
   it('handles fenced JSON from Claude', async () => {
-    const fenced = {
-      messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: `\`\`\`json\n${JSON.stringify(validDevResponse)}\n\`\`\`` }],
-        }),
-      },
-    } as never;
+    const fenced: LlmClient = {
+      complete: async () => `\`\`\`json\n${JSON.stringify(validDevResponse)}\n\`\`\``,
+    };
 
     const gitCalls: GitCall[] = [];
     const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, fenced);
