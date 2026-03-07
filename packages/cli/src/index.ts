@@ -148,8 +148,8 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
         console.error(red('Error: --input for GitHub source must be in <owner/repo> format'));
         return 2;
       }
-      const connector = new GitHubConnector({ token });
-      stories = await connector.fetchIssues(owner, repo);
+      const connector = new GitHubConnector({ owner: owner!, repo: repo!, token });
+      stories = await connector.fetchIssues();
     } else {
       console.error(red(`Error: unknown source "${source}". Must be file, jira, or github`));
       return 2;
