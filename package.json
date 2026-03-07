@@ -11,6 +11,8 @@
   "dependencies": {
     "@mastra/core": "^0.10.0",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@octokit/rest": "^21.0.0",
+    "@types/js-yaml": "^4.0.9",
     "zod": "^3.23.0",
     "simple-git": "^3.27.0",
     "js-yaml": "^4.1.0"
