@@ -166,11 +166,30 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
 
   console.log(`Running pipeline for ${stories.length} story/stories...`);
 
+  // ── Resolve LLM provider ──────────────────────────────────────────────────
+  const copilotClient = new GitHubCopilotClient();
+  const hasAnthropicKey = !!process.env['ANTHROPIC_API_KEY'];
+  const hasCopilotToken = copilotClient.isAuthenticated();
+
+  if (!hasAnthropicKey && !hasCopilotToken) {
+    console.error(red('Error: no LLM provider configured.'));
+    console.error('  Either set ANTHROPIC_API_KEY or run `splinty auth` for GitHub Copilot.');
+    return 2;
+  }
+
+  const useCopilot = hasCopilotToken && !hasAnthropicKey;
+  if (useCopilot) {
+    console.log('Using GitHub Copilot as LLM provider (gpt-4o)');
+  }
+
   // ── Run orchestrator ───────────────────────────────────────────────────────
   const baseDir = workspaceBaseDir();
   const orch = new SprintOrchestrator({
     projectId: project,
     workspaceBaseDir: baseDir,
+    ...(useCopilot
+      ? { defaultClient: copilotClient, defaultModel: 'gpt-4o', lightModel: 'gpt-4o-mini' }
+      : {}),
   });
 
   let results;
