@@ -9,3 +9,5 @@ export type { GitFactory } from './developer';
 export { SoundEngineerAgent } from './sound-engineer';
 export { QAEngineerAgent } from './qa-engineer';
 export type { QAVerdict } from './qa-engineer';
+export { SprintOrchestrator } from './orchestrator';
+export type { OrchestratorConfig } from './orchestrator';

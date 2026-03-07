@@ -62,6 +62,7 @@ export class QAEngineerAgent extends BaseAgent {
 
     const testCommand = handoff?.stateOfWorld['testCommand'] ?? 'bun test';
     const branchName = handoff?.stateOfWorld['branchName'] ?? `story/${story.id}`;
+    const commitSha = handoff?.stateOfWorld['commitSha'] ?? '';
     const reworkCount = parseInt(handoff?.stateOfWorld['reworkCount'] ?? '0', 10);
 
     // Read source file contents for QA inspection
@@ -174,6 +175,7 @@ Return JSON with passedAC, failedAC, bugs, verdict (PASS/FAIL/BLOCKED), addition
         {
           verdict: 'PASS',
           branchName,
+          commitSha,
           passedAC: passedAC.join('|'),
           bugs: JSON.stringify(bugs),
           qaReportPath: 'artifacts/qa-report.md',

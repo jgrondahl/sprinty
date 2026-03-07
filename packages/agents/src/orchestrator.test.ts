@@ -1,0 +1,413 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { SprintOrchestrator } from './orchestrator';
+import {
+  StoryState,
+  StorySource,
+  type Story,
+} from '@splinty/core';
+
+const now = new Date().toISOString();
+
+// ─── Story factories ───────────────────────────────────────────────────────────
+
+function makeRawStory(overrides: Partial<Story> = {}): Story {
+  return {
+    id: 'story-orch',
+    title: 'As a user, I want to log in',
+    description: 'Login via JWT',
+    acceptanceCriteria: ['Given valid creds, Then I get a JWT'],
+    state: StoryState.RAW,
+    source: StorySource.FILE,
+    workspacePath: '',
+    domain: 'auth',
+    tags: ['auth'],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function makeAudioStory(): Story {
+  return makeRawStory({
+    id: 'story-audio',
+    title: 'As a user, I want pitch detection',
+    domain: 'audio',
+    tags: ['audio', 'ml'],
+  });
+}
+
+// ─── Mock Anthropic client ────────────────────────────────────────────────────
+//
+// The orchestrator passes this single client to ALL agents. Each agent's
+// callClaude() will call anthropic.messages.create(). We use a queue so
+// successive calls return the right JSON for each pipeline stage.
+
+type MockResponse = object;
+
+function makeQueuedClient(queue: MockResponse[], callLog?: { calls: number }) {
+  let idx = 0;
+  return {
+    messages: {
+      create: async () => {
+        if (callLog) callLog.calls++;
+        const resp = queue[idx] ?? queue[queue.length - 1]!;
+        idx++;
+        return { content: [{ type: 'text', text: JSON.stringify(resp) }] };
+      },
+    },
+  };
+}
+
+// ─── Canned agent responses ───────────────────────────────────────────────────
+
+const bizResp = {
+  businessGoals: 'Enable secure login for all users',
+  successMetrics: '1000 DAU within 3 months',
+  riskFactors: 'Token theft, brute-force attacks, token expiry edge cases',
+  epicSummary: 'Build a JWT-based login system that allows users to authenticate securely.',
+};
+
+const poResp = {
+  title: 'As a user, I want to log in so I can access my account',
+  description: 'Secure JWT-based login',
+  acceptanceCriteria: ['Given valid creds, When I submit, Then I receive JWT'],
+  priority: 'MUST',
+  storyPoints: 3,
+  domain: 'auth',
+  tags: ['auth'],
+};
+
+const archResp = {
+  adr: '# ADR: Login Service\n\n## Decision\nUse JWT.',
+  diagram: 'C4Context\n  title Login',
+  techStack: 'TypeScript, Node.js, JWT',
+  soundEngineerRequired: false,
+  soundEngineerRationale: 'No audio features',
+};
+
+const archAudioResp = {
+  adr: '# ADR: Audio Pipeline\n\n## Decision\nUse Librosa.',
+  diagram: 'C4Context\n  title Audio',
+  techStack: 'Python, Librosa',
+  soundEngineerRequired: true,
+  soundEngineerRationale: 'Audio ML requires Librosa',
+};
+
+const soundEngResp = {
+  requiresPython: true,
+  files: [{ path: 'audio_service.py', content: 'import librosa\n' }],
+  audioDesign: '# Audio Design\n\nUse Librosa.',
+  integrationInterface: 'HTTP POST /analyse',
+};
+
+const devResp = {
+  files: [
+    { path: 'auth/service.ts', content: 'export function login() { return "jwt"; }' },
+    { path: 'auth/service.test.ts', content: 'import { describe, it, expect } from "bun:test";\ndescribe("login", () => { it("works", () => { expect(true).toBe(true); }); });' },
+  ],
+  testCommand: 'bun test',
+  summary: 'Login service implemented',
+};
+
+const qaPassResp = {
+  passedAC: ['Given valid creds, When I submit, Then I receive JWT'],
+  failedAC: [],
+  bugs: [],
+  verdict: 'PASS',
+  additionalTests: [],
+  report: '# QA Report\n\nVerdict: PASS',
+};
+
+const qaFailResp = {
+  passedAC: [],
+  failedAC: ['Given valid creds, When I submit, Then I receive JWT'],
+  bugs: [{ description: 'Missing error handling', severity: 'major' }],
+  verdict: 'FAIL',
+  additionalTests: [],
+  report: '# QA Report\n\nVerdict: FAIL',
+};
+
+const qaBlockedResp = {
+  passedAC: [],
+  failedAC: ['Given valid creds, When I submit, Then I receive JWT'],
+  bugs: [{ description: 'Source missing', severity: 'critical' }],
+  verdict: 'BLOCKED',
+  additionalTests: [],
+  report: '# QA Report\n\nVerdict: BLOCKED',
+};
+
+// ─── Mock git factory ─────────────────────────────────────────────────────────
+
+function makeMockGit() {
+  return (_repoPath: string) => ({
+    init: async () => {},
+    checkoutLocalBranch: async () => {},
+    add: async () => {},
+    commit: async () => ({ commit: 'abc1234', summary: { changes: 1, insertions: 5, deletions: 0 }, author: null, root: false, branch: 'story/story-orch' }),
+    push: async () => {},
+  }) as never;
+}
+
+// ─── Test setup ───────────────────────────────────────────────────────────────
+
+let tmpDir: string;
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'splinty-orch-'));
+});
+
+afterEach(() => {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+// ─── Happy-path pipeline ──────────────────────────────────────────────────────
+
+describe('SprintOrchestrator — happy path (RAW → PR_OPEN)', () => {
+  it('runs full pipeline and returns AppBuilderResult', async () => {
+    // Queue: biz, po, arch, dev, qa
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+
+    expect(results).toHaveLength(1);
+    const result = results[0]!;
+    expect(result.storyId).toBe('story-orch');
+    expect(result.gitBranch).toBe('story/story-orch');
+    expect(result.testResults.failed).toBe(0);
+  });
+
+  it('story reaches PR_OPEN state in workspace', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    await orch.run([makeRawStory()]);
+
+    // Read story.json from workspace (stories live under <projectId>/stories/<storyId>)
+    const workspacePaths = fs.readdirSync(path.join(tmpDir, 'test-proj', 'stories'));
+    const storyDir = workspacePaths.find((p) => p.includes('story-orch'));
+    expect(storyDir).toBeTruthy();
+
+    const storyJson = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, 'test-proj', 'stories', storyDir!, 'story.json'), 'utf-8')
+    );
+    expect(storyJson.state).toBe(StoryState.PR_OPEN);
+  });
+
+  it('AGENTS.md is created and contains the story', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    await orch.run([makeRawStory()]);
+
+    const agentsMd = fs.readFileSync(path.join(tmpDir, 'test-proj', 'AGENTS.md'), 'utf-8');
+    expect(agentsMd).toContain('story-orch');
+  });
+
+  it('commitSha is captured from Developer git commit', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.commitShas).toContain('abc1234');
+  });
+
+  it('calls createPullRequest hook and captures prUrl', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+    let prCreated = false;
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+      createPullRequest: async () => {
+        prCreated = true;
+        return 'https://github.com/owner/repo/pull/42';
+      },
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(prCreated).toBe(true);
+    expect(results[0]!.prUrl).toBe('https://github.com/owner/repo/pull/42');
+  });
+});
+
+// ─── Audio story — Sound Engineer invoked ────────────────────────────────────
+
+describe('SprintOrchestrator — audio story', () => {
+  it('invokes Sound Engineer when archResp.soundEngineerRequired is true', async () => {
+    // Queue: biz, po, arch(audio), soundEng, dev, qa
+    const callLog = { calls: 0 };
+    const client = makeQueuedClient(
+      [bizResp, poResp, archAudioResp, soundEngResp, devResp, qaPassResp],
+      callLog
+    );
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeAudioStory()]);
+    // 6 LLM calls: biz + po + arch + soundEng + dev + qa
+    expect(callLog.calls).toBe(6);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+});
+
+// ─── Failure isolation ────────────────────────────────────────────────────────
+
+describe('SprintOrchestrator — per-story isolation', () => {
+  it('failed story does not block successful story', async () => {
+    // story-A will always fail: every call for it throws (keyed on story title in prompt).
+    // story-B will succeed via a queued-response client.
+    // Both share the same client but the throw is deterministic: any message mentioning
+    // "Failing story" triggers the error; everything else returns the next queued response.
+    const storyBQueue = [bizResp, poResp, archResp, devResp, qaPassResp];
+    let storyBIdx = 0;
+    const client = {
+      messages: {
+        create: async (params: { messages: Array<{ content: string }> }) => {
+          const text = params?.messages?.[0]?.content ?? '';
+          if (text.includes('Failing story')) {
+            throw new Error('Claude API failure for story-A');
+          }
+          const resp = storyBQueue[storyBIdx] ?? storyBQueue[storyBQueue.length - 1]!;
+          storyBIdx++;
+          return { content: [{ type: 'text', text: JSON.stringify(resp) }] };
+        },
+      },
+    };
+
+    const storyA = makeRawStory({ id: 'story-fail', title: 'Failing story' });
+    const storyB = makeRawStory({ id: 'story-ok', title: 'OK story' });
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([storyA, storyB]);
+
+    expect(results).toHaveLength(2);
+    // story-A failed
+    const aResult = results.find((r) => r.storyId === 'story-fail');
+    expect(aResult).toBeTruthy();
+    expect(aResult!.testResults.failed).toBe(1);
+    // story-B succeeded
+    const bResult = results.find((r) => r.storyId === 'story-ok');
+    expect(bResult).toBeTruthy();
+    expect(bResult!.testResults.failed).toBe(0);
+  });
+
+  it('multiple stories in same batch all get results', async () => {
+    // Two identical stories processed in parallel
+    const client = makeQueuedClient([
+      // story 1 pipeline
+      bizResp, poResp, archResp, devResp, qaPassResp,
+      // story 2 pipeline
+      bizResp, poResp, archResp, devResp, qaPassResp,
+    ]);
+
+    const stories = [
+      makeRawStory({ id: 'story-1', title: 'Story One' }),
+      makeRawStory({ id: 'story-2', title: 'Story Two' }),
+    ];
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run(stories);
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.storyId)).toBe(true);
+  });
+});
+
+// ─── QA rework loop ───────────────────────────────────────────────────────────
+
+describe('SprintOrchestrator — QA rework loop', () => {
+  it('handles QA BLOCKED verdict by returning failed result', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaBlockedResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(1);
+  });
+
+  it('QA FAIL triggers developer rework, then PASS succeeds', async () => {
+    // biz, po, arch, dev(1st), qa(fail), dev(2nd rework), qa(pass)
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaFailResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+});
+
+// ─── Init behavior ────────────────────────────────────────────────────────────
+
+describe('SprintOrchestrator — ledger init', () => {
+  it('creates AGENTS.md even if projectId directory does not exist', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'brand-new-project',
+      workspaceBaseDir: tmpDir,
+      anthropicClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    await orch.run([makeRawStory()]);
+
+    const agentsMd = path.join(tmpDir, 'brand-new-project', 'AGENTS.md');
+    expect(fs.existsSync(agentsMd)).toBe(true);
+  });
+});

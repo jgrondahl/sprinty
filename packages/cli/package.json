@@ -8,5 +8,10 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
     "test": "bun test"
+  },
+  "dependencies": {
+    "@splinty/core": "workspace:*",
+    "@splinty/agents": "workspace:*",
+    "@splinty/integrations": "workspace:*"
   }
 }

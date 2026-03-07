@@ -43,10 +43,9 @@ export class ProductOwnerAgent extends BaseAgent {
 
     const businessContext = handoff
       ? `Business Goals: ${handoff.stateOfWorld['businessGoals'] ?? 'N/A'}
-Epic Summary: ${handoff.stateOfWorld['epicSummary'] ?? 'N/A'}
-Success Metrics: ${handoff.stateOfWorld['successMetrics'] ?? 'N/A'}`
-      : `Title: ${story.title}
-Description: ${story.description}`;
+         Epic Summary: ${handoff.stateOfWorld['epicSummary'] ?? 'N/A'}
+         Success Metrics: ${handoff.stateOfWorld['successMetrics'] ?? 'N/A'}` : `Title: ${story.title}
+         Description: ${story.description}`;
 
     const userMessage = `Generate a well-formed user story with Gherkin acceptance criteria from this epic:
 

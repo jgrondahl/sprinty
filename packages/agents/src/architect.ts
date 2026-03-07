@@ -97,6 +97,12 @@ Return the JSON object as specified.`;
     if (this.currentWorkspace) {
       this.workspaceManager.writeFile(this.currentWorkspace, 'artifacts/architecture.md', parsed.adr);
       this.workspaceManager.writeFile(this.currentWorkspace, 'artifacts/diagram.mmd', parsed.diagram);
+      // Update story.json with transitioned state so downstream agents reload correctly
+      this.workspaceManager.writeFile(
+        this.currentWorkspace,
+        'story.json',
+        JSON.stringify(inProgressStory, null, 2)
+      );
       this.logActivity(`Architecture artifacts written: architecture.md, diagram.mmd`);
     }
 
