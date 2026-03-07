@@ -17,7 +17,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { LedgerManager } from '@splinty/core';
-import { SprintOrchestrator } from '@splinty/agents';
+import { SprintOrchestrator, GitHubCopilotClient } from '@splinty/agents';
 import { FileConnector, JiraConnector, GitHubConnector } from '@splinty/integrations';
 
 // ─── ANSI colors ──────────────────────────────────────────────────────────────
@@ -243,6 +243,34 @@ export function cmdStatus(flags: Record<string, string>): number {
 }
 
 /**
+ * splinty auth [--force] [--logout]
+ *
+ * Runs the GitHub OAuth device flow to authenticate with GitHub Copilot.
+ * Stores the resulting token at ~/.splinty/copilot-token.json.
+ *
+ * Flags:
+ *   --force   Re-run device flow even if a token is already cached
+ *   --logout  Remove the cached token
+ */
+export async function cmdAuth(flags: Record<string, string>): Promise<number> {
+  const client = new GitHubCopilotClient();
+
+  if (flags['logout'] === 'true') {
+    client.logout();
+    return 0;
+  }
+
+  const force = flags['force'] === 'true';
+  try {
+    await client.login(force);
+  } catch (err) {
+    console.error(red(`Error: ${(err as Error).message}`));
+    return 2;
+  }
+  return 0;
+}
+
+/**
  * splinty --help
  */
 export function cmdHelp(): number {
@@ -253,10 +281,21 @@ USAGE
   splinty <command> [options]
 
 COMMANDS
+  auth    Authenticate with GitHub Copilot (device flow)
   init    Create a new project workspace
   run     Load stories and run the full pipeline
   status  Print the current sprint board
   --help  Show this help
+
+AUTH
+  splinty auth [--force] [--logout]
+
+  Options:
+    --force     Re-run device flow even if already authenticated
+    --logout    Remove the cached GitHub Copilot token
+
+  Token is stored at: ~/.splinty/copilot-token.json
+  Requires a paid GitHub Copilot subscription (Pro, Pro+, Business, or Enterprise).
 
 INIT
   splinty init --name <project-name>
@@ -308,7 +347,9 @@ async function main(): Promise<void> {
 
   let exitCode: number;
 
-  if (command === 'init') {
+  if (command === 'auth') {
+    exitCode = await cmdAuth(flags);
+  } else if (command === 'init') {
     exitCode = cmdInit(flags);
   } else if (command === 'run') {
     exitCode = await cmdRun(flags);

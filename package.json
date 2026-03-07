@@ -6,7 +6,8 @@
   "scripts": {
     "build": "bun run --filter='*' build",
     "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "splinty": "bun packages/cli/src/index.ts"
   },
   "dependencies": {
     "@mastra/core": "^0.10.0",
