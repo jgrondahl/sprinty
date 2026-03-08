@@ -19,11 +19,16 @@ import {
   TaskDecomposer,
   buildEvidenceSummary,
   classifyRevisionLevel,
+  detectRepeatedEnforcementViolations,
+  EnforcementReportSchema,
   type LlmClient,
   type Story,
   type HandoffDocument,
   type AppBuilderResult,
   type StoryMetrics,
+  type ArchitectureMetrics,
+  type ExecutionMetrics,
+  type AggregateSandboxTelemetry,
   type SprintTelemetry,
   type AgentConfig,
   type ArchitecturePlan,
@@ -46,6 +51,7 @@ import {
   type ServiceGuardrails,
   type ServiceApprovalGate,
   type RetentionConfig,
+  type EnforcementReport,
   ServiceCountGuard,
   SprintTaskPlanSchema,
 } from '@splinty/core';
@@ -172,6 +178,7 @@ class StoryMetricsCollector {
   private agentDurationsMs: Record<string, number> = {};
   private agentStartTime: number | null = null;
   private lastAgent: string | null = null;
+  private architectureData: ArchitectureMetrics | null = null;
 
   startAgent(agent: string): void {
     if (this.lastAgent && this.agentStartTime !== null) {
@@ -207,11 +214,28 @@ class StoryMetricsCollector {
     this.revisionContributions += 1;
   }
 
+  recordArchitectureMetrics(metrics: ArchitectureMetrics): void {
+    if (!this.architectureData) {
+      this.architectureData = { ...metrics };
+      return;
+    }
+    this.architectureData = {
+      planId: metrics.planId,
+      revisionCount: metrics.revisionCount,
+      boundaryViolations: this.architectureData.boundaryViolations + metrics.boundaryViolations,
+      dependencyViolations: this.architectureData.dependencyViolations + metrics.dependencyViolations,
+      namingViolations: this.architectureData.namingViolations + metrics.namingViolations,
+      patternViolations: this.architectureData.patternViolations + metrics.patternViolations,
+      constraintsSatisfied: metrics.constraintsSatisfied,
+      constraintsTotal: metrics.constraintsTotal,
+    };
+  }
+
   build(storyId: string): StoryMetrics {
     if (this.lastAgent) {
       this.endAgent(this.lastAgent);
     }
-    return {
+    const result: StoryMetrics = {
       storyId,
       totalDurationMs: Math.max(0, Date.now() - this.startTime),
       llmCalls: this.llmCalls,
@@ -223,6 +247,10 @@ class StoryMetricsCollector {
       agentDurationsMs: { ...this.agentDurationsMs },
       traceId: `${storyId}-${Date.now()}`,
     };
+    if (this.architectureData) {
+      result.architectureMetrics = this.architectureData;
+    }
+    return result;
   }
 }
 
@@ -423,12 +451,20 @@ export class SprintOrchestrator {
       }
     }
 
+    const escalation = this.retrievalTracker.detectContextGap(this.config.projectId);
+    if (escalation) {
+      console.warn(escalation.message);
+    }
+
     return results;
   }
 
   private async runPlannedSprint(stories: Story[]): Promise<AppBuilderResult[]> {
     const sprintStart = Date.now();
     const sprintStartedAt = new Date(sprintStart).toISOString();
+    const sprintRunId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${this.config.projectId}-${Date.now()}`;
     const sprintWs = this.workspaceMgr.createWorkspace(this.config.projectId, 'sprint');
     const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
     const clientFor = (persona: AgentPersona): LlmClient | undefined =>
@@ -482,6 +518,7 @@ export class SprintOrchestrator {
         currentSprintPlan: sprintPlan,
         currentGlobalPlanId: checkpoint.activeGlobalPlanId,
         taskPlan,
+        runId: checkpoint.runId,
         revisionCount: checkpoint.revisionCount,
         maxRevisions: 1,
         storyRevisionCounts: Object.fromEntries(stories.map((story) => [story.id, 0])),
@@ -584,6 +621,14 @@ export class SprintOrchestrator {
 
       const artifactNow = new Date().toISOString();
       this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+        type: 'global-architecture-plan',
+        id: planResult.globalPlan.planId,
+        path: `artifacts/global-plan-${planResult.globalPlan.planId}.json`,
+        createdAt: artifactNow,
+        planLevel: 'global',
+        relatedStories: refinedStories.map((s) => s.id),
+      });
+      this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
         type: 'sprint-architecture-plan',
         id: planResult.sprintPlan.planId,
         path: `artifacts/sprint-plan-${planResult.sprintPlan.planId}.json`,
@@ -606,6 +651,7 @@ export class SprintOrchestrator {
         currentSprintPlan: planResult.sprintPlan,
         currentGlobalPlanId: planResult.globalPlan.planId,
         taskPlan,
+        runId: sprintRunId,
         revisionCount: 0,
         maxRevisions: 1,
         storyRevisionCounts: Object.fromEntries(refinedStories.map((story) => [story.id, 0])),
@@ -620,8 +666,20 @@ export class SprintOrchestrator {
 
     this.plannedSprintState = state;
 
+    const revisionPlanner = new ArchitecturePlannerAgent(
+      agentConfigs[AgentPersona.ARCHITECTURE_PLANNER]!,
+      this.workspaceMgr,
+      this.handoffMgr,
+      clientFor(AgentPersona.ARCHITECTURE_PLANNER)
+    );
+    revisionPlanner.setWorkspace(sprintWs);
+    const revisionDecomposer = new TaskDecomposer();
+    const sprintEnforcementReports: EnforcementReport[] = [...(state.enforcementReports ?? [])];
+
     const completedTaskIds = new Set<string>(state.checkpoint?.completedTaskIds ?? []);
     const blockedTaskIds = new Set<string>(state.checkpoint?.blockedTaskIds ?? []);
+    let sprintTotalRetries = 0;
+    const taskDurationsMs: number[] = [];
     for (const task of state.taskPlan.tasks) {
       if (completedTaskIds.has(task.taskId)) {
         for (const storyId of task.storyIds) completedStoryIds.add(storyId);
@@ -654,6 +712,7 @@ export class SprintOrchestrator {
         }
 
         const baseStory = currentStories.get(primaryStoryId)!;
+        const taskStartMs = Date.now();
         const ws = this.workspaceMgr.createWorkspace(this.config.projectId, primaryStoryId);
         const dev = new DeveloperAgent(
           agentConfigs[AgentPersona.DEVELOPER]!,
@@ -698,10 +757,15 @@ export class SprintOrchestrator {
             taskId: task.taskId,
             module: task.module,
             type: task.type,
+            description: task.description,
+            targetFiles: task.targetFiles,
+            inputs: task.inputs,
+            expectedOutputs: task.expectedOutputs,
+            acceptanceCriteria: task.acceptanceCriteria,
           },
         };
 
-        const projectCtx: ProjectContext | null = this.contextBuilder.build(this.config.projectId, primaryStoryId, []);
+        const projectCtx: ProjectContext | null = this.contextBuilder.build(this.config.projectId, primaryStoryId, [], task.targetFiles ?? []);
         const handoffWithCtx: HandoffDocument = projectCtx
           ? { ...handoff, projectContext: projectCtx }
           : handoff;
@@ -730,6 +794,25 @@ export class SprintOrchestrator {
               createdAt: devArtifactNow,
               relatedStories: task.storyIds,
             });
+            try {
+              const report = JSON.parse(devHandoff.stateOfWorld['enforcementReport']);
+              if (report && typeof report === 'object') {
+                const violations: Array<{ constraintId: string; severity: string }> = Array.isArray(report.violations) ? report.violations : [];
+                const metrics = report.metrics ?? { totalConstraints: 0, satisfied: 0 };
+                collector.recordArchitectureMetrics({
+                  planId: typeof report.planId === 'string' ? report.planId : state.currentSprintPlan.planId,
+                  revisionCount: state.revisionCount,
+                  boundaryViolations: violations.filter((v) => v.constraintId?.startsWith('file-ownership-')).length,
+                  dependencyViolations: violations.filter((v) => v.constraintId?.startsWith('dep-boundary-')).length,
+                  namingViolations: violations.filter((v) => v.constraintId?.startsWith('required-export-')).length,
+                  patternViolations: violations.filter((v) => v.constraintId?.startsWith('tech-compliance-')).length,
+                  constraintsSatisfied: typeof metrics.satisfied === 'number' ? metrics.satisfied : 0,
+                  constraintsTotal: typeof metrics.totalConstraints === 'number' ? metrics.totalConstraints : 0,
+                });
+              }
+            } catch (_parseError) {
+              void _parseError;
+            }
           }
           if (devHandoff.stateOfWorld['sandboxTestResult']) {
             collector.recordSandboxRun();
@@ -741,6 +824,25 @@ export class SprintOrchestrator {
               relatedStories: task.storyIds,
             });
           }
+          if (devHandoff.stateOfWorld['enforcementBlocked'] === 'true') {
+            const rawReport = devHandoff.stateOfWorld['enforcementReport'];
+            if (rawReport) {
+              try {
+                const parsed = EnforcementReportSchema.safeParse(JSON.parse(rawReport));
+                if (parsed.success) {
+                  sprintEnforcementReports.push(parsed.data);
+                }
+              } catch {
+              }
+            }
+            blockedTaskIds.add(task.taskId);
+            for (const storyId of task.storyIds) {
+              blockedStoryIds.add(storyId);
+              latestHandoffs.set(storyId, devHandoff);
+            }
+            break;
+          }
+
           let qaStory = this.reloadStory(ws, primaryStoryId, storyForDev);
           if (qaStory.state !== StoryState.IN_REVIEW) {
             qaStory = {
@@ -776,6 +878,7 @@ export class SprintOrchestrator {
           }
 
           qaAttempts += 1;
+          sprintTotalRetries += 1;
           collector.recordRework();
           nextDevInput = qaHandoff;
         }
@@ -786,18 +889,20 @@ export class SprintOrchestrator {
             blockedStoryIds.add(storyId);
           }
         }
+        taskDurationsMs.push(Math.max(0, Date.now() - taskStartMs));
       }
 
       const remainingGroups = scheduleGroups.filter((candidate) => candidate.groupId > group.groupId);
       const checkpointState: PlannedSprintState = {
         ...state,
+        enforcementReports: sprintEnforcementReports,
         checkpoint: {
           checkpointId: state.checkpoint?.checkpointId ??
             (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
               ? crypto.randomUUID()
               : `checkpoint-${Date.now()}`),
           sprintId: state.taskPlan.sprintId,
-          runId: state.checkpoint?.runId ?? `${sprintWs.projectId}-${sprintWs.storyId}-${Date.now()}`,
+          runId: state.runId,
           activeSprintPlanId: state.currentSprintPlan.planId,
           activeGlobalPlanId: state.currentGlobalPlanId,
           revisionCount: state.revisionCount,
@@ -810,6 +915,25 @@ export class SprintOrchestrator {
       };
       this.saveCheckpoint(sprintWs, checkpointState);
       state = checkpointState;
+
+      const repeatedDetection = detectRepeatedEnforcementViolations(sprintEnforcementReports);
+      if (repeatedDetection.triggered) {
+        const revisionTrigger: PlanRevisionTrigger = {
+          reason: 'architecture-violation',
+          level: 'sprint',
+          description: `Repeated enforcement violations detected: ${repeatedDetection.constraintCategories.join(', ')}`,
+          evidence: repeatedDetection.evidence,
+          timestamp: new Date().toISOString(),
+        };
+        state = await this.handleRevisionLoop(
+          sprintWs,
+          state,
+          revisionTrigger,
+          revisionPlanner,
+          revisionDecomposer,
+          stories
+        );
+      }
     }
 
     const techWriter = new TechnicalWriterAgent(
@@ -893,10 +1017,37 @@ export class SprintOrchestrator {
     }
 
     const completedAt = new Date().toISOString();
-    const runId = state.checkpoint?.runId ?? `${this.config.projectId}-${state.taskPlan.sprintId}-${sprintStart}`;
+    const runId = state.runId;
     const sprintStoryMetrics = results
       .map((result) => result.metrics)
       .filter((metric): metric is StoryMetrics => metric !== undefined);
+    const totalTasks = state.taskPlan.tasks.length;
+    const completedTaskCount = completedTaskIds.size;
+    const blockedTaskCount = blockedTaskIds.size;
+    const failedTaskCount = Math.max(0, totalTasks - completedTaskCount - blockedTaskCount);
+    const sprintTotalSandboxRuns = sprintStoryMetrics.reduce((sum, m) => sum + m.sandboxRuns, 0);
+    const executionMetrics: ExecutionMetrics = {
+      totalTasks,
+      completedTasks: completedTaskCount,
+      failedTasks: failedTaskCount,
+      blockedTasks: blockedTaskCount,
+      totalRetries: sprintTotalRetries,
+      architectureRevisions: state.revisionCount,
+      averageTaskDurationMs: taskDurationsMs.length > 0
+        ? taskDurationsMs.reduce((sum, d) => sum + d, 0) / taskDurationsMs.length
+        : 0,
+      totalDurationMs: Math.max(0, Date.now() - sprintStart),
+    };
+    const sandboxTelemetry: AggregateSandboxTelemetry = {
+      totalRuns: sprintTotalSandboxRuns,
+      successfulRuns: completedTaskCount,
+      failedRuns: Math.max(0, sprintTotalSandboxRuns - completedTaskCount),
+      resourceLimitViolations: 0,
+      peakCpuPercent: 0,
+      peakMemoryMb: 0,
+      totalDiskUsageMb: 0,
+      totalSandboxRuntimeMs: 0,
+    };
     const sprintTelemetry: SprintTelemetry = {
       sprintId: state.taskPlan.sprintId,
       runId,
@@ -906,6 +1057,8 @@ export class SprintOrchestrator {
       totalDurationMs: Math.max(0, Date.now() - sprintStart),
       totalLlmCalls: sprintStoryMetrics.reduce((sum, metric) => sum + metric.llmCalls, 0),
       totalCostEstimateUsd: sprintStoryMetrics.reduce((sum, metric) => sum + metric.costEstimateUsd, 0),
+      execution: executionMetrics,
+      sandbox: sandboxTelemetry,
     };
     const telemetryTimestamp = Date.now();
     const telemetryPath = `artifacts/telemetry/sprint-${state.taskPlan.sprintId}-${telemetryTimestamp}.json`;
@@ -1118,7 +1271,8 @@ export class SprintOrchestrator {
         const projectCtx: ProjectContext | null = this.contextBuilder.build(
           this.config.projectId,
           currentStory.id,
-          currentStory.dependsOn ?? []
+          currentStory.dependsOn ?? [],
+          handoff?.task?.targetFiles ?? []
         );
         if (handoff && projectCtx) {
           handoff = { ...handoff, projectContext: projectCtx };
@@ -1464,7 +1618,7 @@ export class SprintOrchestrator {
         ? crypto.randomUUID()
         : `checkpoint-${Date.now()}`),
       sprintId: state.taskPlan.sprintId,
-      runId: existing?.runId ?? `${ws.projectId}-${ws.storyId}-${Date.now()}`,
+      runId: state.runId,
       activeSprintPlanId: state.currentSprintPlan.planId,
       activeGlobalPlanId: state.currentGlobalPlanId,
       revisionCount: state.revisionCount,

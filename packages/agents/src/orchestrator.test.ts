@@ -1332,6 +1332,7 @@ describe('SprintOrchestrator — revision loop and checkpoint', () => {
     currentSprintPlan: makePlan('sprint-plan-1', 'sprint'),
     currentGlobalPlanId: 'global-plan-1',
     taskPlan: makeTaskPlan('sprint-plan-1'),
+    runId: 'run-1',
     revisionCount: 0,
     maxRevisions: 1,
     storyRevisionCounts: { 'story-rev-1': 0 },
