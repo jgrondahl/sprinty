@@ -6,6 +6,8 @@ import { SprintOrchestrator } from './orchestrator';
 import {
   StoryState,
   StorySource,
+  MockSandbox,
+  makeSuccessResult,
   type Story,
   type LlmClient,
 } from '@splinty/core';
@@ -410,5 +412,91 @@ describe('SprintOrchestrator — ledger init', () => {
 
     const agentsMd = path.join(tmpDir, 'brand-new-project', 'AGENTS.md');
     expect(fs.existsSync(agentsMd)).toBe(true);
+  });
+});
+
+// ─── Sandbox pipeline integration ─────────────────────────────────────────────
+
+describe('SprintOrchestrator — sandbox pipeline', () => {
+  it('wires sandbox to DeveloperAgent and sandbox results flow through pipeline', async () => {
+    const installResult = makeSuccessResult('npm install', 'added 50 packages');
+    const buildResult = makeSuccessResult('npm run build', 'compiled successfully');
+    const testResult = makeSuccessResult('npm test', '3 tests passed');
+    const sandbox = new MockSandbox({ executeResults: [installResult, buildResult, testResult] });
+
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      sandbox,
+    });
+
+    const results = await orch.run([makeRawStory()]);
+
+    // Pipeline still completes successfully
+    expect(results).toHaveLength(1);
+    expect(results[0]!.testResults.failed).toBe(0);
+
+    // Sandbox was used (files written, commands executed, cleaned up)
+    expect(sandbox.cleanedUp).toBe(true);
+
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(3);
+    expect(execCalls[0]!.command).toBe('npm install');
+    expect(execCalls[1]!.command).toBe('npm run build');
+    expect(execCalls[2]!.command).toBe('npm test');
+
+    // Generated files were written to sandbox
+    const writtenFiles = sandbox.getWrittenFiles();
+    expect(writtenFiles.size).toBeGreaterThan(0);
+  });
+
+  it('pipeline succeeds even when sandbox is not provided (backwards compatible)', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      // No sandbox — should work exactly as before
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+
+  it('passes sandboxConfig to sandbox.init() when provided', async () => {
+    const sandbox = new MockSandbox();
+    const sandboxConfig = {
+      image: 'node:20-slim@sha256:abc123',
+      timeoutMs: 60000,
+      memoryLimitMb: 1024,
+      cpuLimit: 2,
+      networkEnabled: false,
+      workDir: '/workspace',
+      maxDiskMb: 500,
+    };
+
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      sandbox,
+      sandboxConfig,
+    });
+
+    await orch.run([makeRawStory()]);
+
+    const initCall = sandbox.calls.find((c) => c.method === 'init');
+    expect(initCall).toBeDefined();
+    expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
   });
 });

@@ -10,6 +10,8 @@ import {
   type HandoffDocument,
   type AppBuilderResult,
   type AgentConfig,
+  type SandboxEnvironment,
+  type SandboxConfig,
 } from '@splinty/core';
 import {
   BusinessOwnerAgent,
@@ -61,6 +63,10 @@ export interface OrchestratorConfig {
     branchName: string,
     commitSha: string
   ) => Promise<string>;
+  /** Optional sandbox for compile→test loop in DeveloperAgent */
+  sandbox?: SandboxEnvironment;
+  /** Config for sandbox initialization (image, limits, etc.) */
+  sandboxConfig?: SandboxConfig;
 }
 
 // ─── Agent Config Factories ───────────────────────────────────────────────────
@@ -187,6 +193,7 @@ export class SprintOrchestrator {
     );
     dev.setWorkspace(ws);
     if (this.config.gitFactory) dev.setGitFactory(this.config.gitFactory);
+    if (this.config.sandbox) dev.setSandbox(this.config.sandbox, this.config.sandboxConfig);
 
     const soundEng = new SoundEngineerAgent(
       agentConfigs[AgentPersona.SOUND_ENGINEER]!,
