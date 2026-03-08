@@ -1,6 +1,6 @@
 # Splinty
 
-An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from a file, Jira, or GitHub Issues and it runs each story through a chain of AI agents — Business Owner → Product Owner → Architect → Developer → QA Engineer — committing code to a branch and opening a pull request automatically.
+An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from a file, Jira, or GitHub Issues and it runs each story through a chain of AI agents — from Architecture Planning to QA and Documentation — committing code to a branch and opening a pull request automatically.
 
 ---
 
@@ -16,8 +16,12 @@ An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from 
   - [init](#init)
   - [run](#run)
   - [status](#status)
+  - [auth](#auth)
+  - [export](#export)
 - [Story File Formats](#story-file-formats)
 - [Pipeline Stages](#pipeline-stages)
+- [Enterprise Features](#enterprise-features)
+- [Architecture](#architecture)
 - [Exit Codes](#exit-codes)
 - [Development](#development)
 
@@ -26,6 +30,7 @@ An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from 
 ## Prerequisites
 
 - [Bun](https://bun.sh) v1.3+
+- [Docker](https://www.docker.com/) (required for sandbox execution)
 - An [Anthropic API key](https://console.anthropic.com/) (required — all agents use Claude)
 - Jira credentials (only for `--source jira`)
 - A GitHub personal access token (only for `--source github`)
@@ -94,60 +99,18 @@ Run the auth flow once. Splinty will print a URL and a one-time code:
 splinty auth
 ```
 
-```
-To connect Splinty to GitHub Copilot:
-  1. Open: https://github.com/login/device
-  2. Enter code: ABCD-1234
+The resulting token is stored at `~/.splinty/copilot-token.json` and reused on all subsequent runs.
 
-Waiting for authorization...
-GitHub Copilot authorization successful.
-```
-
-The resulting token is stored at `~/.splinty/copilot-token.json` and reused on all subsequent runs — you do not need to re-authenticate unless the token is revoked.
-
-#### Step 2 — Use `GitHubCopilotClient` in your code
+#### Step 2 — Configure Orchestrator
 
 ```typescript
-import { GitHubCopilotClient } from '@splinty/agents';
-import { SprintOrchestrator } from '@splinty/agents';
-
-const copilot = new GitHubCopilotClient(); // reads token from ~/.splinty/copilot-token.json
+import { GitHubCopilotClient, SprintOrchestrator } from '@splinty/agents';
 
 const orch = new SprintOrchestrator({
   projectId: 'my-app',
-  defaultClient: copilot,  // use Copilot for all agents
+  defaultClient: new GitHubCopilotClient(),
 });
 ```
-
-Per-agent overrides are also supported — e.g. run QA on Copilot and everything else on Anthropic:
-
-```typescript
-import { AgentPersona } from '@splinty/core';
-
-const orch = new SprintOrchestrator({
-  projectId: 'my-app',
-  clients: {
-    [AgentPersona.QA_ENGINEER]: new GitHubCopilotClient(),
-  },
-  // all other agents fall back to AnthropicClient (reads ANTHROPIC_API_KEY)
-});
-```
-
-#### Re-authenticating
-
-```bash
-splinty auth          # no-op if already authenticated
-splinty auth --force  # force a new device flow even if a token exists
-splinty auth --logout # remove the stored token
-```
-
-#### Token storage
-
-| Path | Contents |
-|---|---|
-| `~/.splinty/copilot-token.json` | Cached OAuth access token |
-
-The token grants `read:user` scope. It does not expire on a fixed schedule, but GitHub can revoke it at any time (e.g. if you revoke the app in your [GitHub settings](https://github.com/settings/apps/authorizations)). If a request returns `401`, Splinty clears the cached token and tells you to run `splinty auth` again.
 
 ---
 
@@ -157,182 +120,158 @@ The token grants `read:user` scope. It does not expire on a fixed schedule, but 
 
 Create a project workspace. Must be run before `run` or `status`.
 
-```
+```bash
 splinty init --name <project-name>
 ```
-
-| Flag     | Required | Description                     |
-|----------|----------|---------------------------------|
-| `--name` | Yes      | Unique project identifier       |
-
-**Example:**
-```bash
-splinty init --name my-app
-```
-
-Creates `.splinty/my-app/` and prints the env vars you need to set.
-
----
 
 ### run
 
 Load stories from a source and run the full AI pipeline.
 
-```
+```bash
 splinty run --source <file|jira|github> --input <path|board-id|owner/repo> [--project <id>]
 ```
 
-| Flag        | Required | Description                                                       |
-|-------------|----------|-------------------------------------------------------------------|
-| `--source`  | Yes      | `file`, `jira`, or `github`                                       |
-| `--input`   | Yes      | File path, Jira board ID, or GitHub `owner/repo`                  |
-| `--project` | No       | Project ID to use (default: `"default"`)                          |
-
-Stories are processed **concurrently**. A failure in one story does not block the others.
-
-**Examples:**
-```bash
-# Run from a Markdown story file
-splinty run --source file --input stories/sprint1.md --project my-app
-
-# Run from a Jira board
-splinty run --source jira --input PROJECT-123 --project my-app
-
-# Run from GitHub Issues
-splinty run --source github --input owner/my-repo --project my-app
-```
-
-**Output:**
-```
-Running pipeline for 3 story/stories...
-  ✓ story-001  branch: story/story-001  PR: https://github.com/owner/repo/pull/42
-  ✓ story-002  branch: story/story-002
-  ✗ story-003  BLOCKED
-```
-
----
+Stories are processed concurrently according to their `dependsOn` graph.
 
 ### status
 
 Print the current sprint board for a project.
 
-```
+```bash
 splinty status [--project <id>]
 ```
 
-| Flag        | Required | Description                          |
-|-------------|----------|--------------------------------------|
-| `--project` | No       | Project ID (default: `"default"`)    |
+### auth
 
-**Example:**
+Manage GitHub Copilot authentication.
+
 ```bash
-splinty status --project my-app
+splinty auth [--force] [--logout]
 ```
 
-**Output:**
-```
-Sprint board — project: my-app
+### export
 
-ID                    Title                                               State                 Updated
-------------------------------------------------------------------------------------------------------
-story-001             As a user, I want to log in...                      PR_OPEN               2026-03-07
-story-002             As a user, I want to reset my password...           IN_REVIEW             2026-03-07
-story-003             As a user, I want to view my profile...             BLOCKED               2026-03-07
-```
+Export sprint telemetry and metrics for analysis.
 
-**Story states:** `RAW` → `EPIC` → `USER_STORY` → `REFINED` → `SPRINT_READY` → `IN_PROGRESS` → `IN_REVIEW` → `DONE` → `PR_OPEN` → `MERGED`
+```bash
+splinty export --format=json --sprint=<id>
+```
 
 ---
 
 ## Story File Formats
 
-### Markdown (`.md`)
-
-One or more stories per file. Use `## Story: <title>` or `## <title>` as a heading.
-
-```markdown
-## Story: As a user, I want to log in so I can access my account
-Allow users to authenticate with email and password using JWT tokens.
-
-### Acceptance Criteria
-- Given valid credentials, When I submit the login form, Then I receive a JWT token
-- Given invalid credentials, When I submit, Then I see an error message
-- Given an expired token, When I make a request, Then I am redirected to login
-```
-
-### JSON (`.json`)
-
-An array of story objects. `id`, `title`, and `description` are required.
-
-```json
-[
-  {
-    "id": "story-001",
-    "title": "User login",
-    "description": "Allow users to authenticate with email and password.",
-    "acceptanceCriteria": [
-      "Given valid credentials, I receive a JWT token",
-      "Given invalid credentials, I see an error"
-    ]
-  }
-]
-```
-
-### YAML (`.yaml` / `.yml`)
-
-An array of story objects in YAML format.
+Splinty supports Markdown, JSON, and YAML. Stories can define dependencies to ensure correct execution order.
 
 ```yaml
 - id: story-001
   title: User login
   description: Allow users to authenticate with email and password.
+  dependsOn: ["auth-provider-setup"]
   acceptanceCriteria:
     - Given valid credentials, I receive a JWT token
-    - Given invalid credentials, I see an error
 ```
 
 ---
 
 ## Pipeline Stages
 
-Each story passes through a sequential chain of AI agents:
+Each story passes through a chain of AI agents. The sequence is configurable via `PipelineConfig`.
 
-| Step | Agent           | Transition                           | Description                                                   |
-|------|-----------------|--------------------------------------|---------------------------------------------------------------|
-| 1    | BusinessOwner   | RAW → EPIC                           | Refines the raw idea into a well-scoped epic                  |
-| 2    | ProductOwner    | EPIC → USER_STORY                    | Breaks the epic into actionable user stories                  |
-| 3    | Orchestrator    | USER_STORY → REFINED → SPRINT_READY  | Automatic validation and sprint-readiness transitions         |
-| 4    | Architect       | SPRINT_READY → IN_PROGRESS           | Produces a technical design and implementation plan           |
-| 5    | SoundEngineer   | *(conditional)*                      | Runs only for audio-domain stories (when flagged by Architect)|
-| 6    | Developer       | IN_PROGRESS → IN_REVIEW              | Writes code and commits it to a feature branch                |
-| 7    | QA Engineer     | IN_REVIEW → DONE                     | Up to 3 QA cycles; `FAIL` triggers a Developer rework pass    |
-| 8    | Orchestrator    | DONE → PR_OPEN                       | Opens a pull request (when GitHub integration is configured)  |
+| Step | Agent | Description |
+|------|-------|-------------|
+| 1 | `ORCHESTRATOR` | Manages the overall lifecycle and state transitions. |
+| 2 | `ARCHITECTURE_PLANNER` | Generates global L0 and sprint L2 architecture plans. |
+| 3 | `BUSINESS_OWNER` | Refines raw ideas into well-scoped epics. |
+| 4 | `PRODUCT_OWNER` | Breaks epics into actionable user stories. |
+| 5 | `ARCHITECT` | Produces technical designs and implementation plans. |
+| 6 | `MIGRATION_ENGINEER` | Generates SQL migrations (up/down) and seed data. |
+| 7 | `INFRASTRUCTURE_ENGINEER` | Generates Dockerfiles, CI configs, and deploy manifests. |
+| 8 | `DEVELOPER` | Writes code using incremental diff patches in a Docker sandbox. |
+| 9 | `SOUND_ENGINEER` | Handles specialized audio-domain tasks when required. |
+| 10 | `QA_ENGINEER` | Verifies implementation via automated tests in the sandbox. |
+| 11 | `INTEGRATION_TEST_ENGINEER` | Generates and executes cross-service integration tests. |
+| 12 | `TECHNICAL_WRITER` | Updates documentation and READMEs based on changes. |
 
-If QA returns `BLOCKED` after 3 attempts, the story is marked **BLOCKED** and the pipeline moves on to the next story.
+---
+
+## Enterprise Features
+
+### Config-Driven Pipeline
+Define custom agent sequences, retry logic, and timeouts.
+
+```typescript
+const pipeline: PipelineConfig = {
+  steps: [
+    { agent: 'ARCHITECT', timeout: 300000 },
+    { agent: 'DEVELOPER', retries: 2, condition: (context) => !context.isBlocked }
+  ]
+};
+```
+
+### Multi-Service Support
+Manage complex architectures with up to 4 services per project.
+
+```typescript
+const service: ServiceDefinition = {
+  name: 'auth-api',
+  path: './services/auth',
+  guardrails: { maxServicesPerProject: 4 }
+};
+```
+
+### Human-in-the-Loop Gates
+Insert approval steps for critical transitions like cross-service changes.
+
+```typescript
+const gate: GateConfig = {
+  after: 'ARCHITECT',
+  requireApproval: 'on-cross-service',
+  notifyVia: 'cli-prompt'
+};
+```
+
+### Infrastructure & Migration Agents
+Automated generation of operational assets:
+- **MigrationEngineer**: SQL files, seeds, and rollback scripts.
+- **InfrastructureEngineer**: Dockerfiles, `docker-compose.yml`, and GitHub Actions.
+
+### Multi-Container Integration Sandbox
+Execute tests across multiple services using `DockerComposeIntegrationSandbox`. It handles orchestration, health checks, and cleanup automatically.
+
+### Observability & Telemetry
+Track performance with `StoryMetrics` including duration, token usage, and cost estimates. Sprints generate detailed telemetry artifacts.
+
+```typescript
+// Default retention: 5 sprints, no auto-archive
+const retention: RetentionConfig = { maxSprints: 5, archiveExpired: false };
+```
+
+---
+
+## Architecture
+
+Splinty uses a **planned-sprint execution model**. Unlike simple story-by-story processing, the `ArchitecturePlannerAgent` creates a global technical vision and detailed sprint plans before implementation begins. This ensures that individual stories align with the overall project structure. The `ArchitectureEnforcer` module applies deterministic rules (dependency boundaries, file ownership) to prevent architectural drift without relying on LLM calls for every check.
 
 ---
 
 ## Exit Codes
 
-| Code | Meaning                                                   |
-|------|-----------------------------------------------------------|
-| `0`  | All stories succeeded                                     |
-| `1`  | One or more stories BLOCKED                               |
-| `2`  | Fatal error (missing args, misconfiguration, unrecoverable failure) |
+| Code | Meaning |
+|------|---------|
+| `0`  | All stories succeeded |
+| `1`  | One or more stories BLOCKED |
+| `2`  | Fatal error or unrecoverable failure |
 
 ---
 
 ## Development
 
 ```bash
-# Run all tests
-bun test
-
-# Run tests with coverage
-bun test --coverage
-
-# Build all packages
-bun run build
+bun test           # Run all tests
+bun test --coverage # Run tests with coverage
+bun run build      # Build all packages
 ```
 
-Tests do not require a live LLM — all agent calls use mocked responses.
+Tests use mocked LLM responses and do not require API keys.
