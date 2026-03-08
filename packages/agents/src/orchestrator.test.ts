@@ -6,6 +6,14 @@ import { SprintOrchestrator, executeRevisionLoop } from './orchestrator';
 import { ArchitecturePlannerAgent } from './architecture-planner';
 import { DeveloperAgent } from './developer';
 import {
+  BusinessOwnerAgent,
+  ProductOwnerAgent,
+  ArchitectAgent,
+  SoundEngineerAgent,
+  QAEngineerAgent,
+  TechnicalWriterAgent,
+} from './index';
+import {
   AgentPersona,
   ArchitecturePlanManager,
   ProjectMemoryManager,
@@ -26,6 +34,7 @@ import {
   type SprintTaskPlan,
   type Story,
   type LlmClient,
+  type PipelineConfig,
   type WorkspaceState,
 } from '@splinty/core';
 
@@ -590,6 +599,157 @@ describe('SprintOrchestrator — QA rework loop', () => {
   });
 });
 
+describe('SprintOrchestrator — configurable pipeline', () => {
+  it('skips a step when condition returns false', async () => {
+    const pipeline: PipelineConfig = {
+      steps: [
+        { agent: AgentPersona.BUSINESS_OWNER },
+        { agent: AgentPersona.PRODUCT_OWNER },
+        { agent: AgentPersona.ARCHITECT },
+        { agent: AgentPersona.SOUND_ENGINEER, condition: () => false },
+        { agent: AgentPersona.DEVELOPER },
+        { agent: AgentPersona.QA_ENGINEER },
+        { agent: AgentPersona.TECHNICAL_WRITER },
+      ],
+    };
+
+    const originalSoundExecute = SoundEngineerAgent.prototype.execute;
+    let soundCalls = 0;
+    SoundEngineerAgent.prototype.execute = async function (handoff, story) {
+      soundCalls += 1;
+      return originalSoundExecute.call(this, handoff, story);
+    };
+
+    try {
+      const client = makeQueuedClient([bizResp, poResp, archAudioResp, devResp, qaPassResp, readmeResp]);
+      const orch = new SprintOrchestrator({
+        projectId: 'test-proj',
+        workspaceBaseDir: tmpDir,
+        defaultClient: client,
+        gitFactory: makeMockGit(),
+        pipeline,
+      });
+
+      const results = await orch.run([makeAudioStory()]);
+      expect(results[0]!.testResults.failed).toBe(0);
+      expect(soundCalls).toBe(0);
+    } finally {
+      SoundEngineerAgent.prototype.execute = originalSoundExecute;
+    }
+  });
+
+  it('runs agents in custom pipeline order', async () => {
+    const pipeline: PipelineConfig = {
+      steps: [
+        { agent: AgentPersona.BUSINESS_OWNER },
+        { agent: AgentPersona.PRODUCT_OWNER },
+        { agent: AgentPersona.ARCHITECT },
+        { agent: AgentPersona.DEVELOPER },
+        { agent: AgentPersona.TECHNICAL_WRITER },
+        { agent: AgentPersona.QA_ENGINEER },
+      ],
+    };
+    const order: AgentPersona[] = [];
+
+    const originalBusinessExecute = BusinessOwnerAgent.prototype.execute;
+    const originalProductExecute = ProductOwnerAgent.prototype.execute;
+    const originalArchitectExecute = ArchitectAgent.prototype.execute;
+    const originalDeveloperExecute = DeveloperAgent.prototype.execute;
+    const originalWriterExecute = TechnicalWriterAgent.prototype.execute;
+    const originalQaExecute = QAEngineerAgent.prototype.execute;
+
+    BusinessOwnerAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.BUSINESS_OWNER);
+      return originalBusinessExecute.call(this, handoff, story);
+    };
+    ProductOwnerAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.PRODUCT_OWNER);
+      return originalProductExecute.call(this, handoff, story);
+    };
+    ArchitectAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.ARCHITECT);
+      return originalArchitectExecute.call(this, handoff, story);
+    };
+    DeveloperAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.DEVELOPER);
+      return originalDeveloperExecute.call(this, handoff, story);
+    };
+    TechnicalWriterAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.TECHNICAL_WRITER);
+      return originalWriterExecute.call(this, handoff, story);
+    };
+    QAEngineerAgent.prototype.execute = async function (handoff, story) {
+      order.push(AgentPersona.QA_ENGINEER);
+      return originalQaExecute.call(this, handoff, story);
+    };
+
+    try {
+      const client = makeQueuedClient([bizResp, poResp, archResp, devResp, readmeResp, qaPassResp]);
+      const orch = new SprintOrchestrator({
+        projectId: 'test-proj',
+        workspaceBaseDir: tmpDir,
+        defaultClient: client,
+        gitFactory: makeMockGit(),
+        pipeline,
+      });
+
+      const results = await orch.run([makeRawStory({ id: 'story-custom-order' })]);
+      expect(results[0]!.testResults.failed).toBe(0);
+      expect(order).toEqual([
+        AgentPersona.BUSINESS_OWNER,
+        AgentPersona.PRODUCT_OWNER,
+        AgentPersona.ARCHITECT,
+        AgentPersona.DEVELOPER,
+        AgentPersona.TECHNICAL_WRITER,
+        AgentPersona.QA_ENGINEER,
+      ]);
+    } finally {
+      BusinessOwnerAgent.prototype.execute = originalBusinessExecute;
+      ProductOwnerAgent.prototype.execute = originalProductExecute;
+      ArchitectAgent.prototype.execute = originalArchitectExecute;
+      DeveloperAgent.prototype.execute = originalDeveloperExecute;
+      TechnicalWriterAgent.prototype.execute = originalWriterExecute;
+      QAEngineerAgent.prototype.execute = originalQaExecute;
+    }
+  });
+
+  it('honors retries override on QA step', async () => {
+    const pipeline: PipelineConfig = {
+      steps: [
+        { agent: AgentPersona.BUSINESS_OWNER },
+        { agent: AgentPersona.PRODUCT_OWNER },
+        { agent: AgentPersona.ARCHITECT },
+        { agent: AgentPersona.DEVELOPER },
+        { agent: AgentPersona.QA_ENGINEER, retries: 1 },
+      ],
+    };
+
+    const originalQaExecute = QAEngineerAgent.prototype.execute;
+    let qaCalls = 0;
+    QAEngineerAgent.prototype.execute = async function (handoff, story) {
+      qaCalls += 1;
+      return originalQaExecute.call(this, handoff, story);
+    };
+
+    try {
+      const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaFailResp, devResp]);
+      const orch = new SprintOrchestrator({
+        projectId: 'test-proj',
+        workspaceBaseDir: tmpDir,
+        defaultClient: client,
+        gitFactory: makeMockGit(),
+        pipeline,
+      });
+
+      const results = await orch.run([makeRawStory({ id: 'story-qa-retries-override' })]);
+      expect(results[0]!.testResults.failed).toBe(1);
+      expect(qaCalls).toBe(1);
+    } finally {
+      QAEngineerAgent.prototype.execute = originalQaExecute;
+    }
+  });
+});
+
 // ─── Init behavior ────────────────────────────────────────────────────────────
 
 describe('SprintOrchestrator — ledger init', () => {
@@ -746,7 +906,7 @@ describe('SprintOrchestrator — resume points', () => {
 
     const resume = resumeMgr.load(ws);
     expect(resume).toBeTruthy();
-    expect(resume!.pipelineStep).toBe(6);
+    expect(resume!.pipelineStep).toBe(5);
     expect(resume!.lastCompletedAgent).toBe(AgentPersona.QA_ENGINEER);
   });
 
@@ -792,7 +952,7 @@ describe('SprintOrchestrator — resume points', () => {
       },
       storySnapshot: snapshot,
       timestamp: new Date().toISOString(),
-      pipelineStep: 3,
+      pipelineStep: 2,
     };
     resumeMgr.save(ws, resumePoint);
 

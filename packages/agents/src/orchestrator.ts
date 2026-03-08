@@ -2,6 +2,7 @@ import {
   AgentPersona,
   StoryState,
   ArchitecturePlanManager,
+  TelemetryRetentionManager,
   ProjectMemoryManager,
   StoryManifestWriter,
   ProjectContextBuilder,
@@ -22,9 +23,12 @@ import {
   type Story,
   type HandoffDocument,
   type AppBuilderResult,
+  type StoryMetrics,
+  type SprintTelemetry,
   type AgentConfig,
   type ArchitecturePlan,
   type HumanGate,
+  type GateConfig,
   type PlanRevisionTrigger,
   type PlannedSprintState,
   type ResumePoint,
@@ -36,8 +40,16 @@ import {
   type StoryManifest,
   type ProjectContext,
   type ArtifactEntry,
+  type PipelineConfig,
+  type StoryContext,
+  type ServiceDefinition,
+  type ServiceGuardrails,
+  type ServiceApprovalGate,
+  type RetentionConfig,
+  ServiceCountGuard,
   SprintTaskPlanSchema,
 } from '@splinty/core';
+import * as path from 'path';
 import { ArchitecturePlannerAgent } from './architecture-planner';
 import {
   BusinessOwnerAgent,
@@ -128,7 +140,14 @@ export interface OrchestratorConfig {
   sandboxConfig?: SandboxConfig;
   /** Optional architecture enforcer for plan-based validation in planned-sprint mode */
   enforcer?: ArchitectureEnforcer;
+  pipeline?: PipelineConfig;
+  /** Guardrails for multi-service architecture proposals */
+  serviceGuardrails?: ServiceGuardrails;
+  /** Injectable gate for service count approval (defaults to auto-reject when requireHumanApproval is false, otherwise throws) */
+  serviceApprovalGate?: ServiceApprovalGate;
   humanGate?: HumanGate;
+  gates?: GateConfig[];
+  telemetryRetention?: RetentionConfig;
 }
 
 type RevisionPlanner = Pick<ArchitecturePlannerAgent, 'reviseSprint'>;
@@ -142,6 +161,76 @@ interface ExecuteRevisionLoopOptions {
   stories: Story[];
   humanGate: HumanGate;
   globalPlan: ArchitecturePlan;
+}
+
+class StoryMetricsCollector {
+  private startTime = Date.now();
+  private llmCalls = 0;
+  private sandboxRuns = 0;
+  private reworkCycles = 0;
+  private revisionContributions = 0;
+  private agentDurationsMs: Record<string, number> = {};
+  private agentStartTime: number | null = null;
+  private lastAgent: string | null = null;
+
+  startAgent(agent: string): void {
+    if (this.lastAgent && this.agentStartTime !== null) {
+      this.endAgent(this.lastAgent);
+    }
+    this.lastAgent = agent;
+    this.agentStartTime = Date.now();
+  }
+
+  endAgent(agent: string): void {
+    if (this.lastAgent !== agent || this.agentStartTime === null) {
+      return;
+    }
+    const elapsed = Math.max(0, Date.now() - this.agentStartTime);
+    this.agentDurationsMs[agent] = (this.agentDurationsMs[agent] ?? 0) + elapsed;
+    this.agentStartTime = null;
+    this.lastAgent = null;
+  }
+
+  recordLlmCall(): void {
+    this.llmCalls += 1;
+  }
+
+  recordSandboxRun(): void {
+    this.sandboxRuns += 1;
+  }
+
+  recordRework(): void {
+    this.reworkCycles += 1;
+  }
+
+  recordRevision(): void {
+    this.revisionContributions += 1;
+  }
+
+  build(storyId: string): StoryMetrics {
+    if (this.lastAgent) {
+      this.endAgent(this.lastAgent);
+    }
+    return {
+      storyId,
+      totalDurationMs: Math.max(0, Date.now() - this.startTime),
+      llmCalls: this.llmCalls,
+      totalTokens: { input: 0, output: 0 },
+      sandboxRuns: this.sandboxRuns,
+      reworkCycles: this.reworkCycles,
+      revisionContributions: this.revisionContributions,
+      costEstimateUsd: 0,
+      agentDurationsMs: { ...this.agentDurationsMs },
+      traceId: `${storyId}-${Date.now()}`,
+    };
+  }
+}
+
+export class GateRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GateRejectedError';
+  }
 }
 
 export async function executeRevisionLoop(options: ExecuteRevisionLoopOptions): Promise<PlannedSprintState> {
@@ -210,16 +299,19 @@ function makeConfig(persona: AgentPersona, model: string): AgentConfig {
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 const DEFAULT_LIGHT_MODEL = 'claude-3-haiku-20240307';
 
-const PIPELINE_STEPS: Record<string, number> = {
-  BUSINESS_OWNER: 0,
-  PRODUCT_OWNER: 1,
-  ORCHESTRATOR_TRANSITIONS: 2,
-  ARCHITECT: 3,
-  SOUND_ENGINEER: 4,
-  DEVELOPER: 5,
-  QA_LOOP: 6,
-  TECHNICAL_WRITER: 7,
-  PR_OPEN: 8,
+const defaultPipeline: PipelineConfig = {
+  steps: [
+    { agent: AgentPersona.BUSINESS_OWNER },
+    { agent: AgentPersona.PRODUCT_OWNER },
+    { agent: AgentPersona.ARCHITECT },
+    {
+      agent: AgentPersona.SOUND_ENGINEER,
+      condition: (ctx) => ctx.requiresAudio,
+    },
+    { agent: AgentPersona.DEVELOPER, retries: 3 },
+    { agent: AgentPersona.QA_ENGINEER, retries: 3 },
+    { agent: AgentPersona.TECHNICAL_WRITER },
+  ],
 };
 
 function buildAgentConfigs(
@@ -232,6 +324,9 @@ function buildAgentConfigs(
     [AgentPersona.ARCHITECT]: makeConfig(AgentPersona.ARCHITECT, model),
     [AgentPersona.DEVELOPER]: makeConfig(AgentPersona.DEVELOPER, model),
     [AgentPersona.SOUND_ENGINEER]: makeConfig(AgentPersona.SOUND_ENGINEER, model),
+    [AgentPersona.MIGRATION_ENGINEER]: makeConfig(AgentPersona.MIGRATION_ENGINEER, model),
+    [AgentPersona.INFRASTRUCTURE_ENGINEER]: makeConfig(AgentPersona.INFRASTRUCTURE_ENGINEER, model),
+    [AgentPersona.INTEGRATION_TEST_ENGINEER]: makeConfig(AgentPersona.INTEGRATION_TEST_ENGINEER, model),
     [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, lightModel),
     [AgentPersona.TECHNICAL_WRITER]: makeConfig(AgentPersona.TECHNICAL_WRITER, model),
     [AgentPersona.ARCHITECTURE_PLANNER]: makeConfig(AgentPersona.ARCHITECTURE_PLANNER, model),
@@ -254,6 +349,7 @@ export class SprintOrchestrator {
   private readonly manifestWriter: StoryManifestWriter;
   private readonly contextBuilder: ProjectContextBuilder;
   private readonly humanGate: HumanGate;
+  private readonly gates: GateConfig[];
   private readonly retrievalTracker: RetrievalTracker = new RetrievalTracker();
   private plannedSprintState: PlannedSprintState | null = null;
 
@@ -270,6 +366,7 @@ export class SprintOrchestrator {
     this.manifestWriter = new StoryManifestWriter(this.workspaceMgr);
     this.contextBuilder = new ProjectContextBuilder(this.workspaceMgr, this.projectMemoryMgr);
     this.humanGate = config.humanGate ?? new DefaultHumanGate();
+    this.gates = config.gates ?? [];
   }
 
   /**
@@ -310,11 +407,12 @@ export class SprintOrchestrator {
 
     const results: AppBuilderResult[] = [];
     for (const story of sortedStories) {
+      const collector = new StoryMetricsCollector();
       try {
-        results.push(await this.runStory(story));
+        results.push(await this.runStory(story, collector));
       } catch (err) {
         this.markBlocked(story, err);
-        results.push(this.makeFailedResult(story, err));
+        results.push(this.makeFailedResult(story, err, collector));
       }
     }
 
@@ -330,10 +428,21 @@ export class SprintOrchestrator {
 
   private async runPlannedSprint(stories: Story[]): Promise<AppBuilderResult[]> {
     const sprintStart = Date.now();
+    const sprintStartedAt = new Date(sprintStart).toISOString();
     const sprintWs = this.workspaceMgr.createWorkspace(this.config.projectId, 'sprint');
     const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
     const clientFor = (persona: AgentPersona): LlmClient | undefined =>
       this.config.clients?.[persona] ?? this.config.defaultClient;
+    const storyCollectors = new Map<string, StoryMetricsCollector>();
+    const getCollector = (storyId: string): StoryMetricsCollector => {
+      const existing = storyCollectors.get(storyId);
+      if (existing) {
+        return existing;
+      }
+      const created = new StoryMetricsCollector();
+      storyCollectors.set(storyId, created);
+      return created;
+    };
 
     for (const story of stories) {
       this.ledger.upsertStory(this.config.projectId, story);
@@ -403,12 +512,25 @@ export class SprintOrchestrator {
 
         let currentStory = story;
         let handoff: HandoffDocument | null = null;
+        const collector = getCollector(story.id);
 
-        handoff = await biz.execute(handoff, currentStory);
+        collector.startAgent(AgentPersona.BUSINESS_OWNER);
+        collector.recordLlmCall();
+        try {
+          handoff = await biz.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.BUSINESS_OWNER);
+        }
         currentStory = this.reloadStory(ws, story.id, currentStory);
         this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
 
-        handoff = await po.execute(handoff, currentStory);
+        collector.startAgent(AgentPersona.PRODUCT_OWNER);
+        collector.recordLlmCall();
+        try {
+          handoff = await po.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.PRODUCT_OWNER);
+        }
         currentStory = this.reloadStory(ws, story.id, currentStory);
         this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
 
@@ -438,6 +560,19 @@ export class SprintOrchestrator {
         projectId: this.config.projectId,
         sprintId,
       });
+
+      if (this.config.serviceGuardrails) {
+        const guard = new ServiceCountGuard(
+          this.config.serviceGuardrails,
+          this.config.serviceApprovalGate ?? { requestServiceApproval: async () => false }
+        );
+        const approved = await guard.enforce(planResult.sprintPlan, this.config.projectId);
+        if (!approved) {
+          throw new Error(
+            `Service count guardrail rejected: plan proposes too many services for project ${this.config.projectId}`
+          );
+        }
+      }
 
       const decomposer = new TaskDecomposer();
       const taskPlan = decomposer.decompose(planResult.sprintPlan, refinedStories);
@@ -574,6 +709,7 @@ export class SprintOrchestrator {
         let qaAttempts = 0;
         let taskPassed = false;
         let nextDevInput: HandoffDocument | null = handoffWithCtx;
+        const collector = getCollector(primaryStoryId);
 
         while (qaAttempts < 3) {
           const storyForDev = {
@@ -581,7 +717,10 @@ export class SprintOrchestrator {
             state: StoryState.IN_PROGRESS,
             updatedAt: new Date().toISOString(),
           };
+          collector.startAgent(AgentPersona.DEVELOPER);
+          collector.recordLlmCall();
           const devHandoff = await dev.execute(nextDevInput, storyForDev);
+          collector.endAgent(AgentPersona.DEVELOPER);
           const devArtifactNow = new Date().toISOString();
           if (devHandoff.stateOfWorld['enforcementReport']) {
             this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
@@ -593,6 +732,7 @@ export class SprintOrchestrator {
             });
           }
           if (devHandoff.stateOfWorld['sandboxTestResult']) {
+            collector.recordSandboxRun();
             this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
               type: 'sandbox-result',
               id: `${task.taskId}-sandbox-${devArtifactNow}`,
@@ -609,7 +749,10 @@ export class SprintOrchestrator {
             };
           }
 
+          collector.startAgent(AgentPersona.QA_ENGINEER);
+          collector.recordLlmCall();
           const qaHandoff = await qa.execute(devHandoff, qaStory);
+          collector.endAgent(AgentPersona.QA_ENGINEER);
           latestHandoffs.set(primaryStoryId, qaHandoff);
           currentStories.set(primaryStoryId, this.reloadStory(ws, primaryStoryId, qaStory));
 
@@ -633,6 +776,7 @@ export class SprintOrchestrator {
           }
 
           qaAttempts += 1;
+          collector.recordRework();
           nextDevInput = qaHandoff;
         }
 
@@ -681,6 +825,7 @@ export class SprintOrchestrator {
       const hasCompletedTask = completedStoryIds.has(original.id);
 
       if (!hasCompletedTask) {
+        const metrics = getCollector(original.id).build(original.id);
         results.push({
           storyId: original.id,
           gitBranch: `story/${original.id}`,
@@ -688,6 +833,7 @@ export class SprintOrchestrator {
           commitShas: [],
           testResults: { passed: 0, failed: 1, skipped: 0 },
           duration: Date.now() - sprintStart,
+          metrics,
         });
         continue;
       }
@@ -704,7 +850,11 @@ export class SprintOrchestrator {
         []
       );
 
+      const collector = getCollector(original.id);
+      collector.startAgent(AgentPersona.TECHNICAL_WRITER);
+      collector.recordLlmCall();
       const writerHandoff = await techWriter.execute(writerInput, currentStory);
+      collector.endAgent(AgentPersona.TECHNICAL_WRITER);
       latestHandoffs.set(original.id, writerHandoff);
       this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
 
@@ -726,6 +876,7 @@ export class SprintOrchestrator {
       this.updateLedger(nextStory, AgentPersona.ORCHESTRATOR);
       currentStories.set(original.id, nextStory);
 
+      const metrics = collector.build(original.id);
       results.push({
         storyId: original.id,
         gitBranch: branchName,
@@ -737,8 +888,38 @@ export class SprintOrchestrator {
           skipped: 0,
         },
         duration: Date.now() - sprintStart,
+        metrics,
       });
     }
+
+    const completedAt = new Date().toISOString();
+    const runId = state.checkpoint?.runId ?? `${this.config.projectId}-${state.taskPlan.sprintId}-${sprintStart}`;
+    const sprintStoryMetrics = results
+      .map((result) => result.metrics)
+      .filter((metric): metric is StoryMetrics => metric !== undefined);
+    const sprintTelemetry: SprintTelemetry = {
+      sprintId: state.taskPlan.sprintId,
+      runId,
+      startedAt: sprintStartedAt,
+      completedAt,
+      stories: sprintStoryMetrics,
+      totalDurationMs: Math.max(0, Date.now() - sprintStart),
+      totalLlmCalls: sprintStoryMetrics.reduce((sum, metric) => sum + metric.llmCalls, 0),
+      totalCostEstimateUsd: sprintStoryMetrics.reduce((sum, metric) => sum + metric.costEstimateUsd, 0),
+    };
+    const telemetryTimestamp = Date.now();
+    const telemetryPath = `artifacts/telemetry/sprint-${state.taskPlan.sprintId}-${telemetryTimestamp}.json`;
+    this.workspaceMgr.writeFile(sprintWs, telemetryPath, JSON.stringify(sprintTelemetry, null, 2));
+    this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+      type: 'run-telemetry',
+      id: `${state.taskPlan.sprintId}-${telemetryTimestamp}`,
+      path: telemetryPath,
+      createdAt: completedAt,
+      sprintId: state.taskPlan.sprintId,
+      relatedStories: stories.map((story) => story.id),
+    });
+    const telemetryDir = path.join(sprintWs.basePath, 'artifacts', 'telemetry');
+    await new TelemetryRetentionManager(this.config.telemetryRetention).enforce(telemetryDir);
 
     if (blockedTaskIds.size === 0) {
       this.checkpointMgr.clear(sprintWs);
@@ -748,7 +929,8 @@ export class SprintOrchestrator {
 
   // ── Per-story pipeline ─────────────────────────────────────────────────────
 
-  private async runStory(story: Story): Promise<AppBuilderResult> {
+  private async runStory(story: Story, collectorParam?: StoryMetricsCollector): Promise<AppBuilderResult> {
+    const collector = collectorParam ?? new StoryMetricsCollector();
     const startTime = Date.now();
 
     // Create (or reuse) workspace for this story
@@ -831,114 +1013,101 @@ export class SprintOrchestrator {
     );
     techWriter.setWorkspace(ws);
 
-    // ── Pipeline execution ─────────────────────────────────────────────────
+    const pipeline = this.config.pipeline ?? defaultPipeline;
+    const developerStepRetries = pipeline.steps.find((step) => step.agent === AgentPersona.DEVELOPER)?.retries;
 
-    // Step 1: RAW → EPIC (BusinessOwner)
-    if (startStep <= PIPELINE_STEPS['BUSINESS_OWNER']!) {
-      handoff = await biz.execute(handoff, currentStory);
-      currentStory = this.reloadStory(ws, story.id, currentStory);
-      this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
-      this.saveResumePoint(ws, currentStory, AgentPersona.BUSINESS_OWNER, handoff, PIPELINE_STEPS['BUSINESS_OWNER']!);
-    }
-
-    // Step 2: EPIC → USER_STORY (ProductOwner)
-    if (startStep <= PIPELINE_STEPS['PRODUCT_OWNER']!) {
-      handoff = await po.execute(handoff, currentStory);
-      currentStory = this.reloadStory(ws, story.id, currentStory);
-      this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
-      this.saveResumePoint(ws, currentStory, AgentPersona.PRODUCT_OWNER, handoff, PIPELINE_STEPS['PRODUCT_OWNER']!);
-    }
-
-    // Step 3: USER_STORY → REFINED → SPRINT_READY (Orchestrator transitions)
-    if (startStep <= PIPELINE_STEPS['ORCHESTRATOR_TRANSITIONS']!) {
-      currentStory = this.stateMachine.transition(currentStory, StoryState.REFINED);
-      this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
-      currentStory = this.stateMachine.transition(currentStory, StoryState.SPRINT_READY);
-      this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
-      this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
-      if (handoff) {
-        this.saveResumePoint(
-          ws,
-          currentStory,
-          AgentPersona.ORCHESTRATOR,
-          handoff,
-          PIPELINE_STEPS['ORCHESTRATOR_TRANSITIONS']!
-        );
+    const applyOrchestratorTransitions = (): void => {
+      if (currentStory.state === StoryState.USER_STORY) {
+        currentStory = this.stateMachine.transition(currentStory, StoryState.REFINED);
+        this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
       }
-    }
-
-    // Step 4: SPRINT_READY → IN_PROGRESS (Architect)
-    if (startStep <= PIPELINE_STEPS['ARCHITECT']!) {
-      handoff = await architect.execute(handoff, currentStory);
-      currentStory = this.reloadStory(ws, story.id, currentStory);
-      this.updateLedger(currentStory, AgentPersona.ARCHITECT);
-      this.saveResumePoint(ws, currentStory, AgentPersona.ARCHITECT, handoff, PIPELINE_STEPS['ARCHITECT']!);
-    }
-
-    // Step 5 (conditional): Sound Engineer if audio domain
-    if (startStep <= PIPELINE_STEPS['SOUND_ENGINEER']! && handoff?.stateOfWorld['soundEngineerRequired'] === 'true') {
-      handoff = await soundEng.execute(handoff, currentStory);
-      this.updateLedger(currentStory, AgentPersona.SOUND_ENGINEER);
-      this.saveResumePoint(ws, currentStory, AgentPersona.SOUND_ENGINEER, handoff, PIPELINE_STEPS['SOUND_ENGINEER']!);
-    }
-
-    // Step 6: IN_PROGRESS → IN_REVIEW (Developer)
-    if (startStep <= PIPELINE_STEPS['DEVELOPER']!) {
-      if (
-        this.config.enforcer &&
-        isArchitecturePlan(handoff?.architecturePlan) &&
-        isImplementationTask(handoff?.task)
-      ) {
-        dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
+      if (currentStory.state === StoryState.REFINED) {
+        currentStory = this.stateMachine.transition(currentStory, StoryState.SPRINT_READY);
+        this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+        this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
       }
-      const projectCtx: ProjectContext | null = this.contextBuilder.build(
-        this.config.projectId,
-        currentStory.id,
-        currentStory.dependsOn ?? []
-      );
-      if (handoff && projectCtx) {
-        handoff = { ...handoff, projectContext: projectCtx };
+    };
+
+    for (let stepIndex = 0; stepIndex < pipeline.steps.length; stepIndex++) {
+      if (stepIndex < startStep) {
+        continue;
       }
-      const requestedFiles = handoff?.projectContext?.relevantFiles.map((f) => f.path) ?? [];
-      handoff = await dev.execute(handoff, currentStory);
-      this.retrievalTracker.record({
-        storyId: currentStory.id,
-        projectId: this.config.projectId,
-        requestedFiles,
-        retrievedFiles: (handoff?.stateOfWorld['filesRead'] ?? '').split(',').filter(Boolean),
-        timestamp: new Date().toISOString(),
-      });
-      currentStory = this.reloadStory(ws, story.id, currentStory);
-      this.updateLedger(currentStory, AgentPersona.DEVELOPER);
-      this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, PIPELINE_STEPS['DEVELOPER']!);
-    }
 
-    // Step 7: QA loop (max 3 attempts to handle rework cycle)
-    if (startStep <= PIPELINE_STEPS['QA_LOOP']!) {
-      let qaAttempts = 0;
-      const maxQaAttempts = 3;
+      const step = pipeline.steps[stepIndex]!;
+      const context: StoryContext = {
+        story: currentStory,
+        handoff,
+        requiresAudio: handoff?.stateOfWorld['soundEngineerRequired'] === 'true',
+      };
 
-      while (qaAttempts < maxQaAttempts) {
-        qaAttempts++;
-        handoff = await qa.execute(handoff, currentStory);
+      if (step.condition && !step.condition(context)) {
+        continue;
+      }
+
+      if (step.agent === AgentPersona.BUSINESS_OWNER) {
+        collector.startAgent(AgentPersona.BUSINESS_OWNER);
+        collector.recordLlmCall();
+        try {
+          handoff = await biz.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.BUSINESS_OWNER);
+        }
         currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
+        this.saveResumePoint(ws, currentStory, AgentPersona.BUSINESS_OWNER, handoff, stepIndex);
+        await this.checkGate(AgentPersona.BUSINESS_OWNER, handoff, currentStory);
+        continue;
+      }
 
-        const verdict = handoff.stateOfWorld['verdict'];
-
-        if (verdict === 'PASS') {
-          this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
-          this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, PIPELINE_STEPS['QA_LOOP']!);
-          break;
+      if (step.agent === AgentPersona.PRODUCT_OWNER) {
+        collector.startAgent(AgentPersona.PRODUCT_OWNER);
+        collector.recordLlmCall();
+        try {
+          handoff = await po.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.PRODUCT_OWNER);
         }
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
+        this.saveResumePoint(ws, currentStory, AgentPersona.PRODUCT_OWNER, handoff, stepIndex);
+        await this.checkGate(AgentPersona.PRODUCT_OWNER, handoff, currentStory);
+        continue;
+      }
 
-        if (verdict === 'BLOCKED') {
-          this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
-          this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, PIPELINE_STEPS['QA_LOOP']!);
-          throw new Error(`Story ${story.id} QA BLOCKED: ${handoff.stateOfWorld['failedAC'] ?? ''}`);
+      if (step.agent === AgentPersona.ARCHITECT) {
+        applyOrchestratorTransitions();
+        if (handoff && stepIndex > 0) {
+          this.saveResumePoint(ws, currentStory, AgentPersona.ORCHESTRATOR, handoff, stepIndex - 1);
         }
+        collector.startAgent(AgentPersona.ARCHITECT);
+        collector.recordLlmCall();
+        try {
+          handoff = await architect.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.ARCHITECT);
+        }
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.ARCHITECT);
+        this.saveResumePoint(ws, currentStory, AgentPersona.ARCHITECT, handoff, stepIndex);
+        await this.checkGate(AgentPersona.ARCHITECT, handoff, currentStory);
+        continue;
+      }
 
-        // FAIL — rework: developer gets another pass
-        this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+      if (step.agent === AgentPersona.SOUND_ENGINEER) {
+        collector.startAgent(AgentPersona.SOUND_ENGINEER);
+        collector.recordLlmCall();
+        try {
+          handoff = await soundEng.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.SOUND_ENGINEER);
+        }
+        this.updateLedger(currentStory, AgentPersona.SOUND_ENGINEER);
+        this.saveResumePoint(ws, currentStory, AgentPersona.SOUND_ENGINEER, handoff, stepIndex);
+        await this.checkGate(AgentPersona.SOUND_ENGINEER, handoff, currentStory);
+        continue;
+      }
+
+      if (step.agent === AgentPersona.DEVELOPER) {
         if (
           this.config.enforcer &&
           isArchitecturePlan(handoff?.architecturePlan) &&
@@ -946,18 +1115,112 @@ export class SprintOrchestrator {
         ) {
           dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
         }
-        handoff = await dev.execute(handoff, currentStory);
+        const projectCtx: ProjectContext | null = this.contextBuilder.build(
+          this.config.projectId,
+          currentStory.id,
+          currentStory.dependsOn ?? []
+        );
+        if (handoff && projectCtx) {
+          handoff = { ...handoff, projectContext: projectCtx };
+        }
+        const requestedFiles = handoff?.projectContext?.relevantFiles.map((f) => f.path) ?? [];
+        collector.startAgent(AgentPersona.DEVELOPER);
+        collector.recordLlmCall();
+        try {
+          handoff = await dev.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.DEVELOPER);
+        }
+        if (handoff.stateOfWorld['sandboxTestResult']) {
+          collector.recordSandboxRun();
+        }
+        this.retrievalTracker.record({
+          storyId: currentStory.id,
+          projectId: this.config.projectId,
+          requestedFiles,
+          retrievedFiles: (handoff?.stateOfWorld['filesRead'] ?? '').split(',').filter(Boolean),
+          timestamp: new Date().toISOString(),
+        });
         currentStory = this.reloadStory(ws, story.id, currentStory);
         this.updateLedger(currentStory, AgentPersona.DEVELOPER);
-        this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, PIPELINE_STEPS['DEVELOPER']!);
+        this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, stepIndex);
+        await this.checkGate(AgentPersona.DEVELOPER, handoff, currentStory);
+        continue;
       }
-    }
 
-    // Step 8: README generation (Technical Writer)
-    if (startStep <= PIPELINE_STEPS['TECHNICAL_WRITER']!) {
-      handoff = await techWriter.execute(handoff, currentStory);
-      this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
-      this.saveResumePoint(ws, currentStory, AgentPersona.TECHNICAL_WRITER, handoff, PIPELINE_STEPS['TECHNICAL_WRITER']!);
+      if (step.agent === AgentPersona.QA_ENGINEER) {
+        let qaAttempts = 0;
+        const maxQaAttempts = step.retries ?? developerStepRetries ?? 3;
+
+        while (qaAttempts < maxQaAttempts) {
+          qaAttempts++;
+          collector.startAgent(AgentPersona.QA_ENGINEER);
+          collector.recordLlmCall();
+          try {
+            handoff = await qa.execute(handoff, currentStory);
+          } finally {
+            collector.endAgent(AgentPersona.QA_ENGINEER);
+          }
+          currentStory = this.reloadStory(ws, story.id, currentStory);
+
+          const verdict = handoff.stateOfWorld['verdict'];
+
+          if (verdict === 'PASS') {
+            this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+            this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, stepIndex);
+            break;
+          }
+
+          if (verdict === 'BLOCKED') {
+            this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+            this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, stepIndex);
+            throw new Error(`Story ${story.id} QA BLOCKED: ${handoff.stateOfWorld['failedAC'] ?? ''}`);
+          }
+
+          this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+          if (
+            this.config.enforcer &&
+            isArchitecturePlan(handoff?.architecturePlan) &&
+            isImplementationTask(handoff?.task)
+          ) {
+            dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
+          }
+          collector.recordRework();
+          collector.startAgent(AgentPersona.DEVELOPER);
+          collector.recordLlmCall();
+          try {
+            handoff = await dev.execute(handoff, currentStory);
+          } finally {
+            collector.endAgent(AgentPersona.DEVELOPER);
+          }
+          if (handoff.stateOfWorld['sandboxTestResult']) {
+            collector.recordSandboxRun();
+          }
+          currentStory = this.reloadStory(ws, story.id, currentStory);
+          this.updateLedger(currentStory, AgentPersona.DEVELOPER);
+          const developerStepIndex = pipeline.steps.findIndex((pipelineStep) => pipelineStep.agent === AgentPersona.DEVELOPER);
+          this.saveResumePoint(
+            ws,
+            currentStory,
+            AgentPersona.DEVELOPER,
+            handoff,
+            developerStepIndex >= 0 ? developerStepIndex : stepIndex
+          );
+        }
+        continue;
+      }
+
+      if (step.agent === AgentPersona.TECHNICAL_WRITER) {
+        collector.startAgent(AgentPersona.TECHNICAL_WRITER);
+        collector.recordLlmCall();
+        try {
+          handoff = await techWriter.execute(handoff, currentStory);
+        } finally {
+          collector.endAgent(AgentPersona.TECHNICAL_WRITER);
+        }
+        this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
+        this.saveResumePoint(ws, currentStory, AgentPersona.TECHNICAL_WRITER, handoff, stepIndex);
+      }
     }
 
     // Step 9: DONE → PR_OPEN
@@ -969,14 +1232,14 @@ export class SprintOrchestrator {
       prUrl = await this.config.createPullRequest(currentStory, branchName, commitSha);
     }
 
-    if (startStep <= PIPELINE_STEPS['PR_OPEN']!) {
+    if (startStep <= pipeline.steps.length) {
       currentStory = this.stateMachine.transition(currentStory, StoryState.PR_OPEN);
       this.writeStoryManifest(ws, currentStory, handoff);
       this.promoteAndUpdateMemory(currentStory, ws);
       this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
       this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
       if (handoff) {
-        this.saveResumePoint(ws, currentStory, AgentPersona.ORCHESTRATOR, handoff, PIPELINE_STEPS['PR_OPEN']!);
+        this.saveResumePoint(ws, currentStory, AgentPersona.ORCHESTRATOR, handoff, pipeline.steps.length);
       }
     }
 
@@ -991,6 +1254,7 @@ export class SprintOrchestrator {
       commitShas: commitSha ? [commitSha] : [],
       testResults: { passed: 1, failed: 0, skipped: 0 },
       duration,
+      metrics: collector.build(story.id),
     };
   }
 
@@ -1055,7 +1319,7 @@ export class SprintOrchestrator {
     console.error(`[Splinty] Story ${story.id} BLOCKED: ${msg}`);
   }
 
-  private makeFailedResult(story: Story, err: unknown): AppBuilderResult {
+  private makeFailedResult(story: Story, err: unknown, collector?: StoryMetricsCollector): AppBuilderResult {
     const msg = err instanceof Error ? err.message : String(err);
     return {
       storyId: story.id,
@@ -1064,6 +1328,7 @@ export class SprintOrchestrator {
       commitShas: [],
       testResults: { passed: 0, failed: 1, skipped: 0 },
       duration: 0,
+      metrics: collector?.build(story.id),
     };
   }
 
@@ -1144,6 +1409,52 @@ export class SprintOrchestrator {
     }
     this.plannedSprintState = updatedState;
     return updatedState;
+  }
+
+  protected async checkGate(
+    afterAgent: AgentPersona,
+    handoff: HandoffDocument,
+    story: Story
+  ): Promise<void> {
+    const gate = this.gates.find((candidate) => candidate.after === afterAgent);
+    if (!gate || gate.requireApproval === 'never') {
+      return;
+    }
+
+    let needsApproval = false;
+    if (gate.requireApproval === 'always') {
+      needsApproval = true;
+    }
+
+    if (gate.requireApproval === 'on-cross-service') {
+      const serviceCount = (handoff.stateOfWorld['services'] ?? '')
+        .split(',')
+        .map((service) => service.trim())
+        .filter((service) => service.length > 0).length;
+      needsApproval = serviceCount > 1;
+    }
+
+    if (gate.requireApproval === 'on-breaking-change') {
+      needsApproval = handoff.stateOfWorld['breakingChange'] === 'true';
+    }
+
+    if (!needsApproval) {
+      return;
+    }
+
+    const approved = await this.humanGate.requestApproval({
+      reason: 'human-override',
+      description: `Gate check after ${afterAgent} for story ${story.id}`,
+      evidence: [
+        `gate-after:${afterAgent}`,
+        `gate-policy:${gate.requireApproval}`,
+      ],
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!approved) {
+      throw new GateRejectedError(`Gate rejected after ${afterAgent} for story ${story.id}`);
+    }
   }
 
   private saveCheckpoint(ws: WorkspaceState, state: PlannedSprintState): void {

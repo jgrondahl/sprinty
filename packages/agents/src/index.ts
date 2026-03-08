@@ -14,6 +14,9 @@ export type {
 export { DeveloperAgent } from './developer';
 export type { GitFactory } from './developer';
 export { SoundEngineerAgent } from './sound-engineer';
+export { MigrationEngineerAgent } from './migration-engineer';
+export { InfrastructureEngineerAgent } from './infrastructure-engineer';
+export { IntegrationTestEngineerAgent } from './integration-test-engineer';
 export { QAEngineerAgent } from './qa-engineer';
 export type { QAVerdict } from './qa-engineer';
 export { TechnicalWriterAgent } from './technical-writer';
