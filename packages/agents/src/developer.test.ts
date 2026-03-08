@@ -12,6 +12,7 @@ import {
   MockSandbox,
   makeSuccessResult,
   makeFailResult,
+  type DiffResult,
   type AgentConfig,
   type Story,
   type HandoffDocument,
@@ -65,6 +66,26 @@ function makeArchitectHandoff(): HandoffDocument {
   };
 }
 
+function makeQaFailHandoff(): HandoffDocument {
+  return {
+    fromAgent: AgentPersona.QA_ENGINEER,
+    toAgent: AgentPersona.DEVELOPER,
+    storyId: 'story-dev',
+    status: 'completed',
+    stateOfWorld: {
+      techStack: 'TypeScript, Node.js, JWT',
+      verdict: 'FAIL',
+      generatedFiles: 'artifacts/src/auth/service.ts,artifacts/src/auth/service.test.ts',
+      branchName: 'story/story-dev',
+      commitSha: 'abc1234',
+      testCommand: 'bun test',
+    },
+    nextGoal: 'Fix failing acceptance criteria',
+    artifacts: [],
+    timestamp: now,
+  };
+}
+
 const validDevResponse = {
   files: [
     { path: 'auth/service.ts', content: 'export function login(email: string, password: string): string { return "jwt"; }' },
@@ -77,6 +98,18 @@ const validDevResponse = {
 function makeMockClient(response: object | Error): LlmClient {
   return {
     complete: async () => {
+      if (response instanceof Error) throw response;
+      return JSON.stringify(response);
+    },
+  };
+}
+
+function makeMultiCallClient(responses: Array<object | Error>): LlmClient {
+  let callIndex = 0;
+  return {
+    complete: async () => {
+      const response = responses[callIndex++];
+      if (!response) throw new Error('No more mock responses');
       if (response instanceof Error) throw response;
       return JSON.stringify(response);
     },
@@ -250,6 +283,257 @@ describe('DeveloperAgent', () => {
   });
 });
 
+// ─── Fix Loop ─────────────────────────────────────────────────────────────────
+
+describe('DeveloperAgent — compile→test→fix loop', () => {
+  const fixResponse = {
+    files: [
+      { path: 'auth/service.ts', content: 'export function login(email: string, password: string): string { return "fixed-jwt"; }' },
+      { path: 'auth/service.test.ts', content: 'import { describe, it, expect } from "bun:test"; describe("login", () => { it("returns jwt", () => { expect(true).toBe(true); }); });' },
+    ],
+    summary: 'Fixed type error in login function',
+  };
+
+  it('retries on build failure and succeeds on second attempt', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildFail = makeFailResult('npm run build', 'TSError: type mismatch');
+    const installOk2 = makeSuccessResult('npm install');
+    const buildOk2 = makeSuccessResult('npm run build');
+    const testOk2 = makeSuccessResult('npm test', '2 tests passed');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildFail, installOk2, buildOk2, testOk2],
+    });
+
+    const client = makeMultiCallClient([validDevResponse, fixResponse]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.toAgent).toBe(AgentPersona.QA_ENGINEER);
+    const execCalls = sandbox.getExecuteCalls();
+    // Round 1: install, build (fail) → Round 2: install, build, test
+    expect(execCalls.length).toBe(5);
+  });
+
+  it('retries on test failure and succeeds', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildOk = makeSuccessResult('npm run build');
+    const testFail = makeFailResult('npm test', 'FAIL: expected true got false');
+    const installOk2 = makeSuccessResult('npm install');
+    const buildOk2 = makeSuccessResult('npm run build');
+    const testOk2 = makeSuccessResult('npm test', '2 tests passed');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildOk, testFail, installOk2, buildOk2, testOk2],
+    });
+
+    const client = makeMultiCallClient([validDevResponse, fixResponse]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.toAgent).toBe(AgentPersona.QA_ENGINEER);
+    const parsedTest = JSON.parse(handoff.stateOfWorld['sandboxTestResult']!) as SandboxResult;
+    expect(parsedTest.exitCode).toBe(0);
+    expect(parsedTest.stdout).toBe('2 tests passed');
+  });
+
+  it('exhausts max attempts (3) and passes failures to QA', async () => {
+    // 4 rounds total: initial + 3 fix attempts, all fail at build
+    const results: SandboxResult[] = [];
+    for (let i = 0; i < 4; i++) {
+      results.push(makeSuccessResult('npm install'));
+      results.push(makeFailResult('npm run build', `TSError round ${i + 1}`));
+    }
+
+    const sandbox = new MockSandbox({ executeResults: results });
+
+    const fixResp1 = { files: [{ path: 'auth/service.ts', content: 'fix1' }], summary: 'Fix 1' };
+    const fixResp2 = { files: [{ path: 'auth/service.ts', content: 'fix2' }], summary: 'Fix 2' };
+    const fixResp3 = { files: [{ path: 'auth/service.ts', content: 'fix3' }], summary: 'Fix 3' };
+    const client = makeMultiCallClient([validDevResponse, fixResp1, fixResp2, fixResp3]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    // Still hands off to QA even with failures
+    expect(handoff.toAgent).toBe(AgentPersona.QA_ENGINEER);
+    // Build should still be failing
+    const parsedBuild = JSON.parse(handoff.stateOfWorld['sandboxBuildResult']!) as SandboxResult;
+    expect(parsedBuild.exitCode).toBe(1);
+  });
+
+  it('does not enter fix loop when sandbox succeeds on first run', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildOk = makeSuccessResult('npm run build');
+    const testOk = makeSuccessResult('npm test', 'all pass');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildOk, testOk],
+    });
+
+    // Only one LLM call for initial generation — no fix call expected
+    const client = makeMockClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['fixAttempts']).toBeUndefined();
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(3); // Only one round
+  });
+
+  it('records fixAttempts count in handoff stateOfWorld', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildFail = makeFailResult('npm run build', 'TSError');
+    const installOk2 = makeSuccessResult('npm install');
+    const buildOk2 = makeSuccessResult('npm run build');
+    const testOk2 = makeSuccessResult('npm test');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildFail, installOk2, buildOk2, testOk2],
+    });
+
+    const client = makeMultiCallClient([validDevResponse, fixResponse]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['fixAttempts']).toBe('1');
+  });
+
+  it('triggers sandboxConstraintRevision when same resource limit violated 2+ times', async () => {
+    const memoryViolation = {
+      limit: 'memory' as const,
+      configured: 512,
+      actual: 768,
+      description: 'Memory limit exceeded',
+    };
+
+    const installOk = makeSuccessResult('npm install');
+    const buildFailMem1: SandboxResult = {
+      exitCode: 137,
+      stdout: '',
+      stderr: 'OOMKilled',
+      durationMs: 100,
+      command: 'npm run build',
+      resourceLimitViolation: memoryViolation,
+    };
+    const installOk2 = makeSuccessResult('npm install');
+    const buildFailMem2: SandboxResult = {
+      exitCode: 137,
+      stdout: '',
+      stderr: 'OOMKilled again',
+      durationMs: 100,
+      command: 'npm run build',
+      resourceLimitViolation: memoryViolation,
+    };
+    const installOk3 = makeSuccessResult('npm install');
+    const buildOk3 = makeSuccessResult('npm run build');
+    const testOk3 = makeSuccessResult('npm test');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildFailMem1, installOk2, buildFailMem2, installOk3, buildOk3, testOk3],
+    });
+
+    const fixResp1 = { files: [{ path: 'auth/service.ts', content: 'fix1' }, { path: 'auth/service.test.ts', content: 'test1' }], summary: 'Fix 1' };
+    const fixResp2 = { files: [{ path: 'auth/service.ts', content: 'fix2' }, { path: 'auth/service.test.ts', content: 'test2' }], summary: 'Fix 2' };
+    const client = makeMultiCallClient([validDevResponse, fixResp1, fixResp2]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['sandboxConstraintRevision']).toBe('memory');
+  });
+
+  it('stops fix loop when LLM returns unusable fix (empty files)', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildFail = makeFailResult('npm run build', 'TSError');
+
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildFail],
+    });
+
+    // LLM returns empty files array for fix — should stop
+    const emptyFixResponse = { files: [], summary: 'Could not fix' };
+    const client = makeMultiCallClient([validDevResponse, emptyFixResponse]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    // Should still produce handoff to QA
+    expect(handoff.toAgent).toBe(AgentPersona.QA_ENGINEER);
+    // Only one sandbox round — no retry after unusable fix
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(2); // install + build (fail), then stop
+    expect(handoff.stateOfWorld['fixAttempts']).toBe('1');
+  });
+
+  it('writes fixed files to workspace on successful fix', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const testFail = makeFailResult('npm test', 'assertion failed');
+    const installOk2 = makeSuccessResult('npm install');
+    const buildOk2 = makeSuccessResult('npm run build');
+    const testOk2 = makeSuccessResult('npm test');
+
+    // Build succeeds in round 1 but test fails
+    const buildOk = makeSuccessResult('npm run build');
+    const sandbox = new MockSandbox({
+      executeResults: [installOk, buildOk, testFail, installOk2, buildOk2, testOk2],
+    });
+
+    const fixedContent = 'export function login(): string { return "fixed"; }';
+    const fixResp = {
+      files: [
+        { path: 'auth/service.ts', content: fixedContent },
+        { path: 'auth/service.test.ts', content: 'test fixed' },
+      ],
+      summary: 'Fixed test assertion',
+    };
+    const client = makeMultiCallClient([validDevResponse, fixResp]);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    // Workspace should have the fixed content
+    const content = wsMgr.readFile(ws, 'artifacts/src/auth/service.ts');
+    expect(content).toBe(fixedContent);
+  });
+});
+
 // ─── Sandbox Integration ──────────────────────────────────────────────────────
 
 describe('DeveloperAgent — sandbox integration', () => {
@@ -308,11 +592,16 @@ describe('DeveloperAgent — sandbox integration', () => {
     expect(parsed.stdout).toBe('2 tests passed');
   });
 
-  it('stops at install when install fails', async () => {
+  it('stops at install when install fails and fix loop exhausts', async () => {
     const failInstall = makeFailResult('npm install', 'ERR! missing package.json');
-    const sandbox = new MockSandbox({ executeResults: [failInstall] });
+    // 4 rounds: initial + 3 fix attempts, all fail at install
+    const sandbox = new MockSandbox({
+      executeResults: [failInstall, failInstall, failInstall, failInstall],
+    });
     const gitCalls: GitCall[] = [];
-    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    const fixResp = { files: [{ path: 'auth/service.ts', content: 'fix' }], summary: 'Fix' };
+    const client = makeMultiCallClient([validDevResponse, fixResp, fixResp, fixResp]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
     agent.setGitFactory(makeMockGit(gitCalls));
     agent.setSandbox(sandbox);
@@ -323,16 +612,26 @@ describe('DeveloperAgent — sandbox integration', () => {
     expect(handoff.stateOfWorld['sandboxBuildResult']).toBeUndefined();
     expect(handoff.stateOfWorld['sandboxTestResult']).toBeUndefined();
 
-    const execCalls = sandbox.getExecuteCalls();
-    expect(execCalls.length).toBe(1);
+    const parsedInstall = JSON.parse(handoff.stateOfWorld['sandboxInstallResult']!) as SandboxResult;
+    expect(parsedInstall.exitCode).toBe(1);
   });
 
-  it('stops at build when build fails', async () => {
+  it('stops at build when build fails and fix loop exhausts', async () => {
     const installOk = makeSuccessResult('npm install');
     const buildFail = makeFailResult('npm run build', 'TSError: type mismatch');
-    const sandbox = new MockSandbox({ executeResults: [installOk, buildFail] });
+    // 4 rounds: initial + 3 fix attempts, all fail at build
+    const sandbox = new MockSandbox({
+      executeResults: [
+        installOk, buildFail,
+        installOk, buildFail,
+        installOk, buildFail,
+        installOk, buildFail,
+      ],
+    });
     const gitCalls: GitCall[] = [];
-    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    const fixResp = { files: [{ path: 'auth/service.ts', content: 'fix' }], summary: 'Fix' };
+    const client = makeMultiCallClient([validDevResponse, fixResp, fixResp, fixResp]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
     agent.setWorkspace(ws);
     agent.setGitFactory(makeMockGit(gitCalls));
     agent.setSandbox(sandbox);
@@ -419,5 +718,94 @@ describe('DeveloperAgent — sandbox integration', () => {
     const initCall = sandbox.calls.find((c) => c.method === 'init');
     expect(initCall).toBeDefined();
     expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
+  });
+});
+
+// ─── Rework with Diffs ──────────────────────────────────────────────────────
+
+describe('DeveloperAgent — rework with diffs', () => {
+  it('rework cycle generates diffs for modified files', async () => {
+    wsMgr.writeFile(ws, 'artifacts/src/auth/service.ts', 'export function login(): string { return "old"; }');
+
+    const reworkResponse = {
+      files: [
+        { path: 'auth/service.ts', content: 'export function login(): string { return "new"; }' },
+      ],
+      testCommand: 'bun test',
+      summary: 'Adjusted login implementation',
+    };
+
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(reworkResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff = await agent.execute(makeQaFailHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['fileDiffs']).toBeDefined();
+    const diffs = JSON.parse(handoff.stateOfWorld['fileDiffs']!) as DiffResult[];
+    expect(diffs.length).toBe(1);
+    expect(diffs[0]!.filePath).toBe('auth/service.ts');
+    expect(diffs[0]!.hunks).toBeGreaterThan(0);
+    expect(diffs[0]!.patch).toContain('@@');
+  });
+
+  it('rework with new files has no diffs for new files', async () => {
+    wsMgr.writeFile(ws, 'artifacts/src/auth/service.ts', 'export function login(): string { return "old"; }');
+
+    const reworkResponse = {
+      files: [
+        { path: 'auth/service.ts', content: 'export function login(): string { return "updated"; }' },
+        { path: 'auth/new.ts', content: 'export const isNewFile = true;' },
+      ],
+      testCommand: 'bun test',
+      summary: 'Updated existing file and added new file',
+    };
+
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(reworkResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff = await agent.execute(makeQaFailHandoff(), makeInProgressStory());
+
+    const diffs = JSON.parse(handoff.stateOfWorld['fileDiffs']!) as DiffResult[];
+    expect(diffs.length).toBe(1);
+    expect(diffs[0]!.filePath).toBe('auth/service.ts');
+  });
+
+  it('non-rework cycle does not generate diffs', async () => {
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['fileDiffs']).toBeUndefined();
+  });
+
+  it('falls back to full regeneration when patch apply fails', async () => {
+    wsMgr.writeFile(ws, 'artifacts/src/auth/service.ts', 'export function login(): string { return "old"; }');
+
+    const reworkResponse = {
+      files: [
+        { path: 'auth/service.ts', content: 'export function login(): string { return "full-new"; }' },
+      ],
+      testCommand: 'bun test',
+      summary: 'Reworked login',
+    };
+
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(reworkResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    // @ts-ignore
+    agent['diffManager'].applyPatch = () => ({ success: false, content: 'ignored', failedHunks: 1 });
+
+    await agent.execute(makeQaFailHandoff(), makeInProgressStory());
+
+    const content = wsMgr.readFile(ws, 'artifacts/src/auth/service.ts');
+    expect(content).toBe('export function login(): string { return "full-new"; }');
   });
 });

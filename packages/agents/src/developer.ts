@@ -2,7 +2,9 @@ import * as path from 'path';
 import simpleGit, { type SimpleGit } from 'simple-git';
 import {
   AgentPersona,
+  DiffManager,
   StoryState,
+  type DiffResult,
   type HandoffDocument,
   type Story,
   type SandboxEnvironment,
@@ -30,6 +32,21 @@ Respond ONLY with a valid JSON object:
   "summary": "string — brief implementation summary"
 }`;
 
+const FIX_SYSTEM_PROMPT = `You are a Senior Full-Stack Developer fixing compilation or test failures.
+You will receive: the current source files, the error output, and the failing command.
+
+Analyze the error carefully. Fix ONLY the issues causing the failure — do not refactor unrelated code.
+
+Respond ONLY with a valid JSON object:
+{
+  "files": [
+    { "path": "string — relative path from src/ (e.g. 'auth/service.ts')", "content": "string — full file content" }
+  ],
+  "summary": "string — brief description of what was fixed"
+}`;
+
+const MAX_FIX_ATTEMPTS = 3;
+
 // Injected git factory type — allows tests to inject mock git
 export type GitFactory = (repoPath: string) => SimpleGit;
 const defaultGitFactory: GitFactory = (repoPath: string) => simpleGit(repoPath);
@@ -53,6 +70,7 @@ function detectStack(techStack: string): { install: string; build: string; test:
 
 export class DeveloperAgent extends BaseAgent {
   private stateMachine = new StoryStateMachine();
+  private diffManager = new DiffManager();
   private gitFactory: GitFactory;
   private sandbox: SandboxEnvironment | null = null;
   private sandboxConfig: SandboxConfig | null = null;
@@ -147,19 +165,115 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
 
     // Write generated files to workspace artifacts/src/
     const generatedFiles: string[] = [];
+    const fileDiffs: DiffResult[] = [];
+    const isRework = handoff?.stateOfWorld['verdict'] === 'FAIL';
+
     if (this.currentWorkspace) {
+      const oldFileContents = new Map<string, string>();
+
+      if (isRework) {
+        for (const file of parsed.files) {
+          const relPath = `artifacts/src/${file.path}`;
+          try {
+            const oldContent = this.workspaceManager.readFile(this.currentWorkspace, relPath);
+            oldFileContents.set(file.path, oldContent);
+          } catch {
+          }
+        }
+      }
+
+      let appliedByDiff = 0;
+      let fallbackToFull = 0;
+      let newFiles = 0;
+
       for (const file of parsed.files) {
         const relPath = `artifacts/src/${file.path}`;
-        this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+        const oldContent = oldFileContents.get(file.path);
+
+        if (isRework && oldContent !== undefined) {
+          const diff = this.diffManager.generateDiff(file.path, oldContent, file.content);
+          if (diff.hunks > 0) {
+            fileDiffs.push(diff);
+            const patchResult = this.diffManager.applyPatch(oldContent, diff.patch);
+            if (patchResult.success) {
+              this.workspaceManager.writeFile(this.currentWorkspace, relPath, patchResult.content);
+              appliedByDiff += 1;
+            } else {
+              this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+              fallbackToFull += 1;
+            }
+          } else {
+            this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+          }
+        } else {
+          if (isRework) {
+            newFiles += 1;
+          }
+          this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+        }
+
         generatedFiles.push(relPath);
       }
+
+      if (isRework) {
+        this.logActivity(
+          `Rework with diffs: ${appliedByDiff} file(s) patched, ${fallbackToFull} fallback full regeneration, ${newFiles} new file(s)`
+        );
+      }
+
       this.logActivity(`Generated ${generatedFiles.length} source file(s): ${generatedFiles.join(', ')}`);
     }
 
-    // ── Sandbox: compile→test loop ──────────────────────────────────────────
+    // ── Sandbox: compile→test→fix loop ────────────────────────────────────────
     let sandboxResults: SandboxStepResult = { install: null, build: null, test: null };
-    if (this.sandbox && parsed.files.length > 0) {
-      sandboxResults = await this.runSandbox(parsed.files, techStack);
+    let fixAttempts = 0;
+    let currentFiles = parsed.files;
+    const resourceViolationCounts = new Map<string, number>();
+
+    if (this.sandbox && currentFiles.length > 0) {
+      sandboxResults = await this.runSandbox(currentFiles, techStack);
+      let failingStep = this.findFailingStep(sandboxResults);
+
+      while (failingStep && fixAttempts < MAX_FIX_ATTEMPTS) {
+        fixAttempts++;
+        this.logActivity(`Fix attempt ${fixAttempts}/${MAX_FIX_ATTEMPTS} — ${failingStep.command} failed (exit=${failingStep.exitCode})`);
+
+        if (failingStep.resourceLimitViolation) {
+          const limitKey = failingStep.resourceLimitViolation.limit;
+          resourceViolationCounts.set(limitKey, (resourceViolationCounts.get(limitKey) ?? 0) + 1);
+        }
+
+        const fixedFiles = await this.requestFix(currentFiles, failingStep, techStack);
+        if (!fixedFiles) {
+          this.logActivity(`Fix attempt ${fixAttempts}: LLM returned no usable fix — stopping`);
+          break;
+        }
+
+        currentFiles = fixedFiles;
+        if (this.currentWorkspace) {
+          for (const file of currentFiles) {
+            const relPath = `artifacts/src/${file.path}`;
+            this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+          }
+        }
+
+        sandboxResults = await this.runSandbox(currentFiles, techStack);
+        failingStep = this.findFailingStep(sandboxResults);
+      }
+
+      if (failingStep) {
+        this.logActivity(`Compile→test→fix loop exhausted after ${fixAttempts} fix attempt(s) — passing failures to QA`);
+      } else if (fixAttempts > 0) {
+        this.logActivity(`Fix loop succeeded after ${fixAttempts} attempt(s)`);
+      }
+    }
+
+    // Same resource limit violated 2+ retries → sandbox-constraint revision trigger
+    const constraintRevisions: string[] = [];
+    for (const [limit, count] of resourceViolationCounts) {
+      if (count >= 2) {
+        constraintRevisions.push(limit);
+      }
     }
 
     // Git operations: create branch and commit
@@ -205,9 +319,14 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
         branchName,
         commitSha,
         generatedFiles: generatedFiles.join(','),
+        ...(fileDiffs.length > 0 ? { fileDiffs: JSON.stringify(fileDiffs) } : {}),
         testCommand: parsed.testCommand ?? 'bun test',
         summary: parsed.summary ?? '',
         ...this.serializeSandboxResults(sandboxResults),
+        ...(fixAttempts > 0 ? { fixAttempts: String(fixAttempts) } : {}),
+        ...(constraintRevisions.length > 0
+          ? { sandboxConstraintRevision: constraintRevisions.join(',') }
+          : {}),
       },
       'Run tests, verify acceptance criteria, and produce QA verdict',
       generatedFiles
@@ -265,5 +384,63 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
     if (results.build) out['sandboxBuildResult'] = JSON.stringify(results.build);
     if (results.test) out['sandboxTestResult'] = JSON.stringify(results.test);
     return out;
+  }
+
+  private findFailingStep(results: SandboxStepResult): SandboxResult | null {
+    if (results.install && results.install.exitCode !== 0) return results.install;
+    if (results.build && results.build.exitCode !== 0) return results.build;
+    if (results.test && results.test.exitCode !== 0) return results.test;
+    return null;
+  }
+
+  private async requestFix(
+    currentFiles: Array<{ path: string; content: string }>,
+    failingResult: SandboxResult,
+    techStack: string,
+  ): Promise<Array<{ path: string; content: string }> | null> {
+    const filesListing = currentFiles
+      .map((f) => `--- ${f.path} ---\n${f.content}`)
+      .join('\n\n');
+
+    const errorOutput = [
+      failingResult.stderr ? `stderr:\n${failingResult.stderr}` : '',
+      failingResult.stdout ? `stdout:\n${failingResult.stdout}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    const userMessage = `The following ${techStack} code failed during "${failingResult.command}" (exit code ${failingResult.exitCode}).
+
+Error output:
+${errorOutput}
+
+Current source files:
+${filesListing}
+
+Fix the code so "${failingResult.command}" succeeds. Return JSON with the corrected files array and a summary.`;
+
+    try {
+      const rawResponse = await this.callClaude({
+        systemPrompt: FIX_SYSTEM_PROMPT,
+        userMessage,
+      });
+
+      const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned) as {
+        files?: Array<{ path: string; content: string }>;
+        summary?: string;
+      };
+
+      if (!parsed.files || !Array.isArray(parsed.files) || parsed.files.length === 0) {
+        return null;
+      }
+
+      if (parsed.summary) {
+        this.logActivity(`Fix: ${parsed.summary}`);
+      }
+
+      return parsed.files;
+    } catch (err) {
+      this.logActivity(`Fix LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
   }
 }
