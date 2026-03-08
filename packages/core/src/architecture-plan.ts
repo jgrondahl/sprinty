@@ -177,6 +177,11 @@ export const ImplementationTaskRefSchema = z.object({
   taskId: z.string().min(1),
   module: z.string().min(1),
   type: z.enum(['create', 'extend', 'integrate', 'test', 'configure']),
+  description: z.string().optional(),
+  targetFiles: z.array(z.string()).optional(),
+  inputs: z.array(z.object({ fromTaskId: z.string().min(1), artifact: z.string().min(1) })).optional(),
+  expectedOutputs: z.array(z.string()).optional(),
+  acceptanceCriteria: z.array(z.string()).optional(),
 });
 
 export type ImplementationTaskRef = z.infer<typeof ImplementationTaskRefSchema>;
