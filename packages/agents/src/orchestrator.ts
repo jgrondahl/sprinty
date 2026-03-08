@@ -2,6 +2,12 @@ import {
   AgentPersona,
   StoryState,
   ArchitecturePlanManager,
+  ProjectMemoryManager,
+  StoryManifestWriter,
+  ProjectContextBuilder,
+  RetrievalTracker,
+  topologicalSortStories,
+  detectFileConflicts,
   DefaultHumanGate,
   SprintCheckpointManager,
   LedgerManager,
@@ -27,6 +33,9 @@ import {
   type SprintCheckpoint,
   type WorkspaceState,
   type ArchitectureEnforcer,
+  type StoryManifest,
+  type ProjectContext,
+  type ArtifactEntry,
   SprintTaskPlanSchema,
 } from '@splinty/core';
 import { ArchitecturePlannerAgent } from './architecture-planner';
@@ -241,7 +250,11 @@ export class SprintOrchestrator {
   private readonly architecturePlanMgr: ArchitecturePlanManager;
   private readonly checkpointMgr: SprintCheckpointManager;
   private readonly stateMachine: StoryStateMachine;
+  private readonly projectMemoryMgr: ProjectMemoryManager;
+  private readonly manifestWriter: StoryManifestWriter;
+  private readonly contextBuilder: ProjectContextBuilder;
   private readonly humanGate: HumanGate;
+  private readonly retrievalTracker: RetrievalTracker = new RetrievalTracker();
   private plannedSprintState: PlannedSprintState | null = null;
 
   constructor(config: OrchestratorConfig) {
@@ -253,6 +266,9 @@ export class SprintOrchestrator {
     this.architecturePlanMgr = new ArchitecturePlanManager(this.workspaceMgr);
     this.checkpointMgr = new SprintCheckpointManager(this.workspaceMgr);
     this.stateMachine = new StoryStateMachine();
+    this.projectMemoryMgr = new ProjectMemoryManager(this.workspaceMgr);
+    this.manifestWriter = new StoryManifestWriter(this.workspaceMgr);
+    this.contextBuilder = new ProjectContextBuilder(this.workspaceMgr, this.projectMemoryMgr);
     this.humanGate = config.humanGate ?? new DefaultHumanGate();
   }
 
@@ -272,20 +288,44 @@ export class SprintOrchestrator {
       return this.runPlannedSprint(stories);
     }
 
-    // Process all stories concurrently, isolating failures
-    const results = await Promise.allSettled(
-      stories.map((story) => this.runStory(story))
-    );
+    const sortedStories = topologicalSortStories(stories);
+    this.workspaceMgr.createProjectWorkspace(this.config.projectId);
 
-    return results.map((result, i) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
+    const storyFilesMap = new Map<string, string[]>();
+    const existingMemory = this.projectMemoryMgr.load(this.config.projectId);
+    if (existingMemory) {
+      for (const story of sortedStories) {
+        const ownedFiles = existingMemory.fileIndex
+          .filter((entry) => entry.createdBy === story.id || entry.lastModifiedBy === story.id)
+          .map((entry) => entry.path);
+        if (ownedFiles.length > 0) {
+          storyFilesMap.set(story.id, ownedFiles);
+        }
       }
-      // Failure — mark blocked and return a failed result
-      const story = stories[i]!;
-      this.markBlocked(story, result.reason);
-      return this.makeFailedResult(story, result.reason);
-    });
+    }
+    const conflicts = detectFileConflicts(sortedStories, storyFilesMap);
+    for (const [filePath, storyIds] of conflicts.entries()) {
+      console.warn(`[Splinty] File conflict: ${filePath} claimed by ${storyIds.join(', ')}`);
+    }
+
+    const results: AppBuilderResult[] = [];
+    for (const story of sortedStories) {
+      try {
+        results.push(await this.runStory(story));
+      } catch (err) {
+        this.markBlocked(story, err);
+        results.push(this.makeFailedResult(story, err));
+      }
+    }
+
+    for (const story of sortedStories) {
+      const missedFiles = this.retrievalTracker.computeMissedFiles(story.id);
+      if (missedFiles.length > 0) {
+        console.warn(`[Splinty] Story ${story.id}: ${missedFiles.length} file(s) not retrieved by developer`);
+      }
+    }
+
+    return results;
   }
 
   private async runPlannedSprint(stories: Story[]): Promise<AppBuilderResult[]> {
@@ -407,6 +447,26 @@ export class SprintOrchestrator {
         JSON.stringify(taskPlan, null, 2)
       );
 
+      const artifactNow = new Date().toISOString();
+      this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+        type: 'sprint-architecture-plan',
+        id: planResult.sprintPlan.planId,
+        path: `artifacts/sprint-plan-${planResult.sprintPlan.planId}.json`,
+        createdAt: artifactNow,
+        planLevel: 'sprint',
+        scopeKey: planResult.sprintPlan.scopeKey,
+        sprintId,
+        relatedStories: refinedStories.map((s) => s.id),
+      });
+      this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+        type: 'sprint-task-plan',
+        id: taskPlan.planId,
+        path: 'artifacts/sprint-task-plan.json',
+        createdAt: artifactNow,
+        sprintId,
+        relatedStories: refinedStories.map((s) => s.id),
+      });
+
       state = {
         currentSprintPlan: planResult.sprintPlan,
         currentGlobalPlanId: planResult.globalPlan.planId,
@@ -506,9 +566,14 @@ export class SprintOrchestrator {
           },
         };
 
+        const projectCtx: ProjectContext | null = this.contextBuilder.build(this.config.projectId, primaryStoryId, []);
+        const handoffWithCtx: HandoffDocument = projectCtx
+          ? { ...handoff, projectContext: projectCtx }
+          : handoff;
+
         let qaAttempts = 0;
         let taskPassed = false;
-        let nextDevInput: HandoffDocument | null = handoff;
+        let nextDevInput: HandoffDocument | null = handoffWithCtx;
 
         while (qaAttempts < 3) {
           const storyForDev = {
@@ -517,6 +582,25 @@ export class SprintOrchestrator {
             updatedAt: new Date().toISOString(),
           };
           const devHandoff = await dev.execute(nextDevInput, storyForDev);
+          const devArtifactNow = new Date().toISOString();
+          if (devHandoff.stateOfWorld['enforcementReport']) {
+            this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+              type: 'enforcement-report',
+              id: `${task.taskId}-enforcement-${devArtifactNow}`,
+              path: `artifacts/enforcement-${task.taskId}.json`,
+              createdAt: devArtifactNow,
+              relatedStories: task.storyIds,
+            });
+          }
+          if (devHandoff.stateOfWorld['sandboxTestResult']) {
+            this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+              type: 'sandbox-result',
+              id: `${task.taskId}-sandbox-${devArtifactNow}`,
+              path: `artifacts/sandbox-${task.taskId}.json`,
+              createdAt: devArtifactNow,
+              relatedStories: task.storyIds,
+            });
+          }
           let qaStory = this.reloadStory(ws, primaryStoryId, storyForDev);
           if (qaStory.state !== StoryState.IN_REVIEW) {
             qaStory = {
@@ -636,6 +720,8 @@ export class SprintOrchestrator {
         nextStory = { ...nextStory, state: StoryState.DONE, updatedAt: new Date().toISOString() };
       }
       nextStory = this.stateMachine.transition(nextStory, StoryState.PR_OPEN);
+      this.writeStoryManifest(ws, nextStory, latestHandoffs.get(original.id) ?? null);
+      this.promoteAndUpdateMemory(nextStory, ws);
       this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(nextStory, null, 2));
       this.updateLedger(nextStory, AgentPersona.ORCHESTRATOR);
       currentStories.set(original.id, nextStory);
@@ -805,7 +891,23 @@ export class SprintOrchestrator {
       ) {
         dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
       }
+      const projectCtx: ProjectContext | null = this.contextBuilder.build(
+        this.config.projectId,
+        currentStory.id,
+        currentStory.dependsOn ?? []
+      );
+      if (handoff && projectCtx) {
+        handoff = { ...handoff, projectContext: projectCtx };
+      }
+      const requestedFiles = handoff?.projectContext?.relevantFiles.map((f) => f.path) ?? [];
       handoff = await dev.execute(handoff, currentStory);
+      this.retrievalTracker.record({
+        storyId: currentStory.id,
+        projectId: this.config.projectId,
+        requestedFiles,
+        retrievedFiles: (handoff?.stateOfWorld['filesRead'] ?? '').split(',').filter(Boolean),
+        timestamp: new Date().toISOString(),
+      });
       currentStory = this.reloadStory(ws, story.id, currentStory);
       this.updateLedger(currentStory, AgentPersona.DEVELOPER);
       this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, PIPELINE_STEPS['DEVELOPER']!);
@@ -869,6 +971,8 @@ export class SprintOrchestrator {
 
     if (startStep <= PIPELINE_STEPS['PR_OPEN']!) {
       currentStory = this.stateMachine.transition(currentStory, StoryState.PR_OPEN);
+      this.writeStoryManifest(ws, currentStory, handoff);
+      this.promoteAndUpdateMemory(currentStory, ws);
       this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
       this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
       if (handoff) {
@@ -963,6 +1067,45 @@ export class SprintOrchestrator {
     };
   }
 
+  private writeStoryManifest(ws: WorkspaceState, story: Story, handoff: HandoffDocument | null): void {
+    try {
+      const manifest: StoryManifest = {
+        storyId: story.id,
+        title: story.title,
+        completedAt: new Date().toISOString(),
+        filesCreated: handoff?.artifacts ?? [],
+        filesModified: [],
+        keyExports: [],
+        dependencies: story.dependsOn ?? [],
+        commands: {
+          build: handoff?.stateOfWorld['testCommand'] ?? 'bun test',
+          test: handoff?.stateOfWorld['testCommand'] ?? 'bun test',
+        },
+        testStatus: handoff?.stateOfWorld['verdict'] === 'PASS' ? 'pass' : 'skip',
+        architectureDecisions: [],
+      };
+      this.manifestWriter.write(ws, manifest);
+      this.projectMemoryMgr.addStoryManifest(this.config.projectId, manifest);
+    } catch {
+    }
+  }
+
+  private promoteAndUpdateMemory(story: Story, ws: WorkspaceState): void {
+    try {
+      const promoted = this.workspaceMgr.promoteFiles(this.config.projectId, ws, 'artifacts/src');
+      for (const filePath of promoted) {
+        this.projectMemoryMgr.addFileEntry(this.config.projectId, {
+          path: filePath,
+          createdBy: story.id,
+          lastModifiedBy: story.id,
+          exports: [],
+          description: `Promoted from story ${story.id}`,
+        });
+      }
+    } catch {
+    }
+  }
+
   private async handleRevisionLoop(
     ws: WorkspaceState,
     state: PlannedSprintState,
@@ -989,6 +1132,14 @@ export class SprintOrchestrator {
     });
 
     if (updatedState.revisionCount > effectiveState.revisionCount) {
+      this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+        type: 'revision-trigger',
+        id: `revision-${updatedState.revisionCount}-${Date.now()}`,
+        path: `artifacts/revision-trigger-${updatedState.revisionCount}.json`,
+        createdAt: new Date().toISOString(),
+        sprintId: updatedState.taskPlan.sprintId,
+        relatedStories: stories.map((s) => s.id),
+      });
       this.saveCheckpoint(ws, updatedState);
     }
     this.plannedSprintState = updatedState;
@@ -1014,6 +1165,14 @@ export class SprintOrchestrator {
     };
 
     this.checkpointMgr.save(ws, checkpoint);
+    this.projectMemoryMgr.addArtifactEntry(this.config.projectId, {
+      type: 'sprint-checkpoint',
+      id: checkpoint.checkpointId,
+      path: `artifacts/checkpoint-${checkpoint.checkpointId}.json`,
+      createdAt: checkpoint.createdAt,
+      sprintId: checkpoint.sprintId,
+      relatedStories: [],
+    });
     this.plannedSprintState = {
       ...state,
       checkpoint,

@@ -44,6 +44,7 @@ const makeResumePoint = (): ResumePoint => {
       workspacePath: '.splinty/proj-001/stories/story-001',
       createdAt: now,
       updatedAt: now,
+      dependsOn: [],
     },
     timestamp: now,
     pipelineStep: 4,

@@ -412,6 +412,7 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
         branchName,
         commitSha,
         generatedFiles: generatedFiles.join(','),
+        filesRead: generatedFiles.join(','),
         ...(fileDiffs.length > 0 ? { fileDiffs: JSON.stringify(fileDiffs) } : {}),
         testCommand: parsed.testCommand ?? 'bun test',
         summary: parsed.summary ?? '',

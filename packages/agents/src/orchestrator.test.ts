@@ -4,9 +4,11 @@ import * as path from 'path';
 import * as os from 'os';
 import { SprintOrchestrator, executeRevisionLoop } from './orchestrator';
 import { ArchitecturePlannerAgent } from './architecture-planner';
+import { DeveloperAgent } from './developer';
 import {
   AgentPersona,
   ArchitecturePlanManager,
+  ProjectMemoryManager,
   ResumeManager,
   StorySchema,
   StoryState,
@@ -37,6 +39,7 @@ function makeRawStory(overrides: Partial<Story> = {}): Story {
     title: 'As a user, I want to log in',
     description: 'Login via JWT',
     acceptanceCriteria: ['Given valid creds, Then I get a JWT'],
+    dependsOn: [],
     state: StoryState.RAW,
     source: StorySource.FILE,
     workspacePath: '',
@@ -465,6 +468,92 @@ describe('SprintOrchestrator — per-story isolation', () => {
     const results = await orch.run(stories);
     expect(results).toHaveLength(2);
     expect(results.every((r) => r.storyId)).toBe(true);
+  });
+});
+
+describe('Phase 2 orchestrator integration', () => {
+  it('runs stories in topological order and creates project workspace', async () => {
+    const storyA = makeRawStory({ id: 'story-A', title: 'Story A', dependsOn: [] });
+    const storyB = makeRawStory({ id: 'story-B', title: 'Story B', dependsOn: ['story-A'] });
+    const executionOrder: string[] = [];
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+    });
+
+    (orch as unknown as { runStory: (story: Story) => Promise<{ storyId: string; gitBranch: string; commitShas: string[]; testResults: { passed: number; failed: number; skipped: number }; duration: number }> }).runStory = async (story) => {
+      executionOrder.push(story.id);
+      return {
+        storyId: story.id,
+        gitBranch: `story/${story.id}`,
+        commitShas: [],
+        testResults: { passed: 1, failed: 0, skipped: 0 },
+        duration: 1,
+      };
+    };
+
+    await orch.run([storyB, storyA]);
+
+    expect(executionOrder).toEqual(['story-A', 'story-B']);
+    expect(fs.existsSync(path.join(tmpDir, 'test-proj', 'project'))).toBe(true);
+  });
+
+  it('writes story manifest and promotes source files at PR_OPEN', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    await orch.run([makeRawStory({ id: 'story-manifest-promote' })]);
+
+    const storyWorkspace = path.join(tmpDir, 'test-proj', 'stories', 'story-manifest-promote');
+    const manifestPath = path.join(storyWorkspace, 'story-manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as { storyId: string };
+    expect(manifest.storyId).toBe('story-manifest-promote');
+
+    const promotedFile = path.join(tmpDir, 'test-proj', 'project', 'src', 'auth', 'service.ts');
+    expect(fs.existsSync(promotedFile)).toBe(true);
+  });
+
+  it('injects ProjectContext into developer handoff in story pipeline', async () => {
+    const workspaceMgr = new WorkspaceManager(tmpDir);
+    workspaceMgr.createProjectWorkspace('test-proj');
+    const memoryMgr = new ProjectMemoryManager(workspaceMgr);
+    memoryMgr.initialize('test-proj', {
+      language: 'TypeScript',
+      runtime: 'Bun',
+      additionalDeps: [],
+    });
+
+    const originalExecute = DeveloperAgent.prototype.execute;
+    let sawProjectContext = false;
+
+    DeveloperAgent.prototype.execute = async function (handoff, story) {
+      sawProjectContext = Boolean(handoff?.projectContext);
+      return originalExecute.call(this, handoff, story);
+    };
+
+    try {
+      const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+      const orch = new SprintOrchestrator({
+        projectId: 'test-proj',
+        workspaceBaseDir: tmpDir,
+        defaultClient: client,
+        gitFactory: makeMockGit(),
+      });
+
+      await orch.run([makeRawStory({ id: 'story-context' })]);
+      expect(sawProjectContext).toBe(true);
+    } finally {
+      DeveloperAgent.prototype.execute = originalExecute;
+    }
   });
 });
 
