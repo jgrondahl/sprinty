@@ -33,6 +33,9 @@ export enum AgentPersona {
   ARCHITECT = 'ARCHITECT',
   DEVELOPER = 'DEVELOPER',
   SOUND_ENGINEER = 'SOUND_ENGINEER',
+  MIGRATION_ENGINEER = 'MIGRATION_ENGINEER',
+  INFRASTRUCTURE_ENGINEER = 'INFRASTRUCTURE_ENGINEER',
+  INTEGRATION_TEST_ENGINEER = 'INTEGRATION_TEST_ENGINEER',
   QA_ENGINEER = 'QA_ENGINEER',
   TECHNICAL_WRITER = 'TECHNICAL_WRITER',
   ARCHITECTURE_PLANNER = 'ARCHITECTURE_PLANNER',
@@ -89,6 +92,22 @@ export const WorkspaceStateSchema = z.object({
   agentsLog: z.array(z.string()).default([]),
 });
 
+export const StoryMetricsSchema = z.object({
+  storyId: z.string().min(1),
+  totalDurationMs: z.number().int().min(0),
+  llmCalls: z.number().int().min(0),
+  totalTokens: z.object({
+    input: z.number().int().min(0),
+    output: z.number().int().min(0),
+  }),
+  sandboxRuns: z.number().int().min(0),
+  reworkCycles: z.number().int().min(0),
+  revisionContributions: z.number().int().min(0),
+  costEstimateUsd: z.number().min(0),
+  agentDurationsMs: z.record(z.string(), z.number().int().min(0)).default({}),
+  traceId: z.string().min(1),
+});
+
 export const AppBuilderResultSchema = z.object({
   storyId: z.string().min(1),
   gitBranch: z.string(),
@@ -100,6 +119,18 @@ export const AppBuilderResultSchema = z.object({
     skipped: z.number().int().min(0),
   }),
   duration: z.number().positive(),
+  metrics: StoryMetricsSchema.optional(),
+});
+
+export const SprintTelemetrySchema = z.object({
+  sprintId: z.string().min(1),
+  runId: z.string().min(1),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime(),
+  stories: z.array(StoryMetricsSchema),
+  totalDurationMs: z.number().int().min(0),
+  totalLlmCalls: z.number().int().min(0),
+  totalCostEstimateUsd: z.number().min(0),
 });
 
 // ─── TypeScript Types (inferred from Zod) ────────────────────────────────────
@@ -108,4 +139,46 @@ export type Story = z.infer<typeof StorySchema>;
 export type HandoffDocument = z.infer<typeof HandoffDocumentSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type WorkspaceState = z.infer<typeof WorkspaceStateSchema>;
+export type StoryMetrics = z.infer<typeof StoryMetricsSchema>;
 export type AppBuilderResult = z.infer<typeof AppBuilderResultSchema>;
+export type SprintTelemetry = z.infer<typeof SprintTelemetrySchema>;
+
+export interface StoryContext {
+  story: Story;
+  handoff: HandoffDocument | null;
+  requiresAudio: boolean;
+  [key: string]: unknown;
+}
+
+export interface PipelineStep {
+  agent: AgentPersona;
+  condition?: (context: StoryContext) => boolean;
+  retries?: number;
+  timeout?: number;
+}
+
+export interface PipelineConfig {
+  steps: PipelineStep[];
+}
+
+// ─── Multi-Service Support ────────────────────────────────────────────────────
+
+export const ServiceDefinitionSchema = z.object({
+  name: z.string().min(1),
+  stack: z.object({
+    language: z.string().min(1),
+    runtime: z.string().min(1),
+    framework: z.string().min(1),
+  }),
+  repoPath: z.string().min(1),
+  dependencies: z.array(z.string()),
+  ports: z.array(z.number().int().positive()),
+});
+
+export const ServiceGuardrailsSchema = z.object({
+  maxServicesPerProject: z.number().int().positive().default(4),
+  requireHumanApproval: z.boolean().default(true),
+});
+
+export type ServiceDefinition = z.infer<typeof ServiceDefinitionSchema>;
+export type ServiceGuardrails = z.infer<typeof ServiceGuardrailsSchema>;
