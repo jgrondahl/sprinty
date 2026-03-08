@@ -112,6 +112,7 @@ function buildAgentConfigs(
     [AgentPersona.SOUND_ENGINEER]: makeConfig(AgentPersona.SOUND_ENGINEER, model),
     [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, lightModel),
     [AgentPersona.TECHNICAL_WRITER]: makeConfig(AgentPersona.TECHNICAL_WRITER, model),
+    [AgentPersona.ARCHITECTURE_PLANNER]: makeConfig(AgentPersona.ARCHITECTURE_PLANNER, model),
     [AgentPersona.ORCHESTRATOR]: makeConfig(AgentPersona.ORCHESTRATOR, model),
   };
 }

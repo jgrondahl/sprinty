@@ -4,6 +4,8 @@ export type { ClaudeCallOptions, LlmCallOptions } from './base-agent';
 export { BusinessOwnerAgent } from './business-owner';
 export { ProductOwnerAgent } from './product-owner';
 export { ArchitectAgent } from './architect';
+export { ArchitecturePlannerAgent } from './architecture-planner';
+export type { PlanSprintOptions, PlanSprintResult } from './architecture-planner';
 export { DeveloperAgent } from './developer';
 export type { GitFactory } from './developer';
 export { SoundEngineerAgent } from './sound-engineer';
