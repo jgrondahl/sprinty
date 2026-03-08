@@ -176,6 +176,36 @@ export class ProjectMemoryManager {
     memory.updatedAt = new Date().toISOString();
     this.save(projectId, memory);
   }
+
+  getArtifactsByType(projectId: string, type: ArtifactType): ArtifactEntry[] {
+    const memory = this.load(projectId);
+    if (!memory) return [];
+    return memory.artifactIndex.filter((a) => a.type === type);
+  }
+
+  getArtifactsBySprintId(projectId: string, sprintId: string): ArtifactEntry[] {
+    const memory = this.load(projectId);
+    if (!memory) return [];
+    return memory.artifactIndex.filter((a) => a.sprintId === sprintId);
+  }
+
+  getSupersessionChain(projectId: string, artifactId: string): ArtifactEntry[] {
+    const memory = this.load(projectId);
+    if (!memory) return [];
+    const index = memory.artifactIndex;
+    const chain: ArtifactEntry[] = [];
+    let currentId: string | undefined = artifactId;
+    const visited = new Set<string>();
+    while (currentId !== undefined) {
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+      const entry = index.find((a) => a.id === currentId);
+      if (!entry) break;
+      chain.push(entry);
+      currentId = entry.supersedes;
+    }
+    return chain;
+  }
 }
 
 export class StoryManifestWriter {

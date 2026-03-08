@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test';
-import { RetrievalTracker, type RetrievalAttempt } from './retrieval-tracking';
+import { RetrievalTracker, type RetrievalAttempt, RETRIEVAL_FAILURE_THRESHOLD_DEFAULT } from './retrieval-tracking';
 
 const makeAttempt = (overrides: Partial<RetrievalAttempt> = {}): RetrievalAttempt => ({
   storyId: 'story-1',
@@ -149,5 +149,93 @@ describe('RetrievalTracker.clear()', () => {
 
     tracker.clear();
     expect(tracker.getAttempts()).toHaveLength(0);
+  });
+});
+
+describe('RetrievalTracker.detectContextGap()', () => {
+  it('returns null when there are no attempts for the project', () => {
+    const tracker = new RetrievalTracker();
+    expect(tracker.detectContextGap('proj-empty')).toBeNull();
+  });
+
+  it('returns null when failure rate is below threshold', () => {
+    const tracker = new RetrievalTracker();
+    for (let i = 0; i < 9; i++) {
+      tracker.record(makeAttempt({ projectId: 'proj-ok', requestedFiles: [`ok-${i}.ts`], retrievedFiles: [`ok-${i}.ts`] }));
+    }
+    tracker.record(makeAttempt({ projectId: 'proj-ok', requestedFiles: ['missing.ts'], retrievedFiles: [] }));
+
+    const result = tracker.detectContextGap('proj-ok');
+    expect(result).toBeNull();
+  });
+
+  it('returns escalation recommendation when failure rate exceeds threshold', () => {
+    const tracker = new RetrievalTracker();
+    for (let i = 0; i < 7; i++) {
+      tracker.record(makeAttempt({
+        storyId: `story-${i}`,
+        projectId: 'proj-bad',
+        requestedFiles: ['src/utils/validation.ts'],
+        retrievedFiles: [],
+      }));
+    }
+    for (let i = 7; i < 10; i++) {
+      tracker.record(makeAttempt({
+        storyId: `story-${i}`,
+        projectId: 'proj-bad',
+        requestedFiles: ['src/main.ts'],
+        retrievedFiles: ['src/main.ts'],
+      }));
+    }
+
+    const result = tracker.detectContextGap('proj-bad');
+    expect(result).not.toBeNull();
+    expect(result!.projectId).toBe('proj-bad');
+    expect(result!.failureRate).toBeCloseTo(0.7);
+    expect(result!.threshold).toBe(RETRIEVAL_FAILURE_THRESHOLD_DEFAULT);
+    expect(result!.totalAttempts).toBe(10);
+    expect(result!.message).toContain('Retrieval failure rate');
+    expect(result!.message).toContain('Recommendation: Enable hybrid retrieval');
+    expect(result!.missedFileFrequency.length).toBeGreaterThan(0);
+    expect(result!.missedFileFrequency[0]!.file).toBe('src/utils/validation.ts');
+  });
+
+  it('respects a custom threshold', () => {
+    const tracker = new RetrievalTracker();
+    tracker.record(makeAttempt({ projectId: 'proj-custom', requestedFiles: ['a.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-custom', requestedFiles: ['b.ts'], retrievedFiles: ['b.ts'] }));
+    tracker.record(makeAttempt({ projectId: 'proj-custom', requestedFiles: ['c.ts'], retrievedFiles: ['c.ts'] }));
+    tracker.record(makeAttempt({ projectId: 'proj-custom', requestedFiles: ['d.ts'], retrievedFiles: ['d.ts'] }));
+    tracker.record(makeAttempt({ projectId: 'proj-custom', requestedFiles: ['e.ts'], retrievedFiles: ['e.ts'] }));
+
+    expect(tracker.detectContextGap('proj-custom', 0.30)).toBeNull();
+    expect(tracker.detectContextGap('proj-custom', 0.10)).not.toBeNull();
+  });
+
+  it('sorts missedFileFrequency by descending count', () => {
+    const tracker = new RetrievalTracker();
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['rare.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['common.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['common.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['common.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['medium.ts'], retrievedFiles: [] }));
+    tracker.record(makeAttempt({ projectId: 'proj-sort', requestedFiles: ['medium.ts'], retrievedFiles: [] }));
+
+    const result = tracker.detectContextGap('proj-sort', 0.0);
+    expect(result).not.toBeNull();
+    const files = result!.missedFileFrequency.map((f) => f.file);
+    expect(files[0]).toBe('common.ts');
+    expect(files[1]).toBe('medium.ts');
+    expect(files[2]).toBe('rare.ts');
+  });
+
+  it('ignores attempts from other projects when computing escalation', () => {
+    const tracker = new RetrievalTracker();
+    for (let i = 0; i < 10; i++) {
+      tracker.record(makeAttempt({ projectId: 'proj-other', requestedFiles: ['x.ts'], retrievedFiles: [] }));
+    }
+    tracker.record(makeAttempt({ projectId: 'proj-target', requestedFiles: ['y.ts'], retrievedFiles: ['y.ts'] }));
+
+    expect(tracker.detectContextGap('proj-target')).toBeNull();
   });
 });
