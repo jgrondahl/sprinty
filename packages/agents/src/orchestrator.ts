@@ -1,21 +1,35 @@
 import {
   AgentPersona,
   StoryState,
+  ArchitecturePlanManager,
+  DefaultHumanGate,
+  SprintCheckpointManager,
   LedgerManager,
   HandoffManager,
   ResumeManager,
   WorkspaceManager,
   StoryStateMachine,
+  TaskDecomposer,
+  buildEvidenceSummary,
+  classifyRevisionLevel,
   type LlmClient,
   type Story,
   type HandoffDocument,
   type AppBuilderResult,
   type AgentConfig,
+  type ArchitecturePlan,
+  type HumanGate,
+  type PlanRevisionTrigger,
+  type PlannedSprintState,
   type ResumePoint,
   type SandboxEnvironment,
   type SandboxConfig,
+  type SprintCheckpoint,
+  type WorkspaceState,
   type ArchitectureEnforcer,
+  SprintTaskPlanSchema,
 } from '@splinty/core';
+import { ArchitecturePlannerAgent } from './architecture-planner';
 import {
   BusinessOwnerAgent,
   ProductOwnerAgent,
@@ -105,6 +119,71 @@ export interface OrchestratorConfig {
   sandboxConfig?: SandboxConfig;
   /** Optional architecture enforcer for plan-based validation in planned-sprint mode */
   enforcer?: ArchitectureEnforcer;
+  humanGate?: HumanGate;
+}
+
+type RevisionPlanner = Pick<ArchitecturePlannerAgent, 'reviseSprint'>;
+type RevisionDecomposer = Pick<TaskDecomposer, 'decompose'>;
+
+interface ExecuteRevisionLoopOptions {
+  state: PlannedSprintState;
+  trigger: PlanRevisionTrigger;
+  planner: RevisionPlanner;
+  decomposer: RevisionDecomposer;
+  stories: Story[];
+  humanGate: HumanGate;
+  globalPlan: ArchitecturePlan;
+}
+
+export async function executeRevisionLoop(options: ExecuteRevisionLoopOptions): Promise<PlannedSprintState> {
+  const {
+    state,
+    trigger,
+    planner,
+    decomposer,
+    stories,
+    humanGate,
+    globalPlan,
+  } = options;
+
+  const revisionLevel = classifyRevisionLevel(trigger, trigger.evidence);
+  if (revisionLevel === 'global') {
+    const approved = await humanGate.requestApproval(trigger);
+    if (!approved) {
+      return state;
+    }
+  }
+
+  if (revisionLevel === 'sprint' && state.revisionCount >= state.maxRevisions) {
+    const approved = await humanGate.requestApproval(trigger);
+    if (!approved) {
+      return state;
+    }
+  }
+
+  const evidence = buildEvidenceSummary(trigger, []);
+  const revision = await planner.reviseSprint({
+    trigger,
+    evidence,
+    currentSprintPlan: state.currentSprintPlan,
+    globalPlan,
+    stories,
+  });
+  const taskPlan = decomposer.decompose(revision.revisedPlan, stories);
+
+  const nextRevisionCount = state.revisionCount + 1;
+  const nextStoryRevisionCounts = { ...state.storyRevisionCounts };
+  for (const story of stories) {
+    nextStoryRevisionCounts[story.id] = (nextStoryRevisionCounts[story.id] ?? 0) + 1;
+  }
+
+  return {
+    ...state,
+    currentSprintPlan: revision.revisedPlan,
+    taskPlan,
+    revisionCount: nextRevisionCount,
+    storyRevisionCounts: nextStoryRevisionCounts,
+  };
 }
 
 // ─── Agent Config Factories ───────────────────────────────────────────────────
@@ -159,7 +238,11 @@ export class SprintOrchestrator {
   private readonly handoffMgr: HandoffManager;
   private readonly workspaceMgr: WorkspaceManager;
   private readonly resumeMgr: ResumeManager;
+  private readonly architecturePlanMgr: ArchitecturePlanManager;
+  private readonly checkpointMgr: SprintCheckpointManager;
   private readonly stateMachine: StoryStateMachine;
+  private readonly humanGate: HumanGate;
+  private plannedSprintState: PlannedSprintState | null = null;
 
   constructor(config: OrchestratorConfig) {
     this.config = config;
@@ -167,7 +250,10 @@ export class SprintOrchestrator {
     this.handoffMgr = new HandoffManager();
     this.workspaceMgr = new WorkspaceManager(config.workspaceBaseDir ?? '.splinty');
     this.resumeMgr = new ResumeManager(this.workspaceMgr);
+    this.architecturePlanMgr = new ArchitecturePlanManager(this.workspaceMgr);
+    this.checkpointMgr = new SprintCheckpointManager(this.workspaceMgr);
     this.stateMachine = new StoryStateMachine();
+    this.humanGate = config.humanGate ?? new DefaultHumanGate();
   }
 
   /**
@@ -180,6 +266,10 @@ export class SprintOrchestrator {
       this.ledger.getSnapshot(this.config.projectId);
     } catch {
       this.ledger.init(this.config.projectId);
+    }
+
+    if (this.config.executionMode === 'planned-sprint') {
+      return this.runPlannedSprint(stories);
     }
 
     // Process all stories concurrently, isolating failures
@@ -196,6 +286,378 @@ export class SprintOrchestrator {
       this.markBlocked(story, result.reason);
       return this.makeFailedResult(story, result.reason);
     });
+  }
+
+  private async runPlannedSprint(stories: Story[]): Promise<AppBuilderResult[]> {
+    const sprintStart = Date.now();
+    const sprintWs = this.workspaceMgr.createWorkspace(this.config.projectId, 'sprint');
+    const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
+    const clientFor = (persona: AgentPersona): LlmClient | undefined =>
+      this.config.clients?.[persona] ?? this.config.defaultClient;
+
+    for (const story of stories) {
+      this.ledger.upsertStory(this.config.projectId, story);
+    }
+
+    const currentStories = new Map<string, Story>(stories.map((story) => [story.id, story]));
+    const latestHandoffs = new Map<string, HandoffDocument>();
+    const completedStoryIds = new Set<string>();
+    const blockedStoryIds = new Set<string>();
+
+    let state: PlannedSprintState;
+    const checkpoint = this.loadCheckpoint(sprintWs);
+
+    if (checkpoint) {
+      const sprintPlan = this.architecturePlanMgr.load(sprintWs, checkpoint.activeSprintPlanId);
+      if (!sprintPlan) {
+        throw new Error(`Sprint architecture plan not found: ${checkpoint.activeSprintPlanId}`);
+      }
+
+      let taskPlan = sprintPlan
+        ? this.readSprintTaskPlan(sprintWs)
+        : null;
+
+      if (!taskPlan) {
+        taskPlan = {
+          sprintId: checkpoint.sprintId,
+          planId: sprintPlan.planId,
+          parentGlobalPlanId: checkpoint.activeGlobalPlanId,
+          schemaVersion: 1,
+          tasks: [],
+          schedule: checkpoint.remainingTaskSchedule,
+          integrationTasks: [],
+        };
+      }
+
+      state = {
+        currentSprintPlan: sprintPlan,
+        currentGlobalPlanId: checkpoint.activeGlobalPlanId,
+        taskPlan,
+        revisionCount: checkpoint.revisionCount,
+        maxRevisions: 1,
+        storyRevisionCounts: Object.fromEntries(stories.map((story) => [story.id, 0])),
+        maxRevisionsPerStory: 1,
+        checkpoint,
+      };
+    } else {
+      const biz = new BusinessOwnerAgent(
+        agentConfigs[AgentPersona.BUSINESS_OWNER]!,
+        this.workspaceMgr,
+        this.handoffMgr,
+        clientFor(AgentPersona.BUSINESS_OWNER)
+      );
+      const po = new ProductOwnerAgent(
+        agentConfigs[AgentPersona.PRODUCT_OWNER]!,
+        this.workspaceMgr,
+        this.handoffMgr,
+        clientFor(AgentPersona.PRODUCT_OWNER)
+      );
+
+      const refinedStories: Story[] = [];
+      const storyHandoffs = new Map<string, HandoffDocument>();
+
+      for (const story of stories) {
+        const ws = this.workspaceMgr.createWorkspace(this.config.projectId, story.id);
+        biz.setWorkspace(ws);
+        po.setWorkspace(ws);
+
+        let currentStory = story;
+        let handoff: HandoffDocument | null = null;
+
+        handoff = await biz.execute(handoff, currentStory);
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
+
+        handoff = await po.execute(handoff, currentStory);
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
+
+        currentStory = this.stateMachine.transition(currentStory, StoryState.REFINED);
+        this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+        currentStory = this.stateMachine.transition(currentStory, StoryState.SPRINT_READY);
+        this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+        this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
+
+        refinedStories.push(currentStory);
+        if (handoff) {
+          storyHandoffs.set(story.id, handoff);
+        }
+        currentStories.set(story.id, currentStory);
+      }
+
+      const planner = new ArchitecturePlannerAgent(
+        agentConfigs[AgentPersona.ARCHITECTURE_PLANNER]!,
+        this.workspaceMgr,
+        this.handoffMgr,
+        clientFor(AgentPersona.ARCHITECTURE_PLANNER)
+      );
+      planner.setWorkspace(sprintWs);
+      const sprintId = `sprint-${Date.now()}`;
+      const planResult = await planner.planSprint({
+        stories: refinedStories,
+        projectId: this.config.projectId,
+        sprintId,
+      });
+
+      const decomposer = new TaskDecomposer();
+      const taskPlan = decomposer.decompose(planResult.sprintPlan, refinedStories);
+      this.workspaceMgr.writeFile(
+        sprintWs,
+        'artifacts/sprint-task-plan.json',
+        JSON.stringify(taskPlan, null, 2)
+      );
+
+      state = {
+        currentSprintPlan: planResult.sprintPlan,
+        currentGlobalPlanId: planResult.globalPlan.planId,
+        taskPlan,
+        revisionCount: 0,
+        maxRevisions: 1,
+        storyRevisionCounts: Object.fromEntries(refinedStories.map((story) => [story.id, 0])),
+        maxRevisionsPerStory: 1,
+      };
+
+      this.plannedSprintState = state;
+      for (const [storyId, handoff] of storyHandoffs.entries()) {
+        latestHandoffs.set(storyId, handoff);
+      }
+    }
+
+    this.plannedSprintState = state;
+
+    const completedTaskIds = new Set<string>(state.checkpoint?.completedTaskIds ?? []);
+    const blockedTaskIds = new Set<string>(state.checkpoint?.blockedTaskIds ?? []);
+    for (const task of state.taskPlan.tasks) {
+      if (completedTaskIds.has(task.taskId)) {
+        for (const storyId of task.storyIds) completedStoryIds.add(storyId);
+      }
+      if (blockedTaskIds.has(task.taskId)) {
+        for (const storyId of task.storyIds) blockedStoryIds.add(storyId);
+      }
+    }
+    const scheduleGroups = [...state.taskPlan.schedule.groups].sort((a, b) => a.groupId - b.groupId);
+    const resumeGroupId = state.checkpoint?.lastCompletedGroupId;
+    const groupsToRun = resumeGroupId
+      ? scheduleGroups.filter((group) => group.groupId > resumeGroupId)
+      : scheduleGroups;
+
+    for (const group of groupsToRun) {
+      for (const taskId of group.taskIds) {
+        if (completedTaskIds.has(taskId) || blockedTaskIds.has(taskId)) {
+          continue;
+        }
+
+        const task = state.taskPlan.tasks.find((candidate) => candidate.taskId === taskId);
+        if (!task) {
+          continue;
+        }
+
+        const primaryStoryId = task.storyIds.find((id) => currentStories.has(id));
+        if (!primaryStoryId) {
+          blockedTaskIds.add(task.taskId);
+          continue;
+        }
+
+        const baseStory = currentStories.get(primaryStoryId)!;
+        const ws = this.workspaceMgr.createWorkspace(this.config.projectId, primaryStoryId);
+        const dev = new DeveloperAgent(
+          agentConfigs[AgentPersona.DEVELOPER]!,
+          this.workspaceMgr,
+          this.handoffMgr,
+          clientFor(AgentPersona.DEVELOPER)
+        );
+        dev.setWorkspace(ws);
+        if (this.config.gitFactory) dev.setGitFactory(this.config.gitFactory);
+        if (this.config.sandbox) dev.setSandbox(this.config.sandbox, this.config.sandboxConfig);
+        if (this.config.enforcer) dev.setEnforcer(this.config.enforcer, state.currentSprintPlan, task);
+
+        const qa = new QAEngineerAgent(
+          agentConfigs[AgentPersona.QA_ENGINEER]!,
+          this.workspaceMgr,
+          this.handoffMgr,
+          clientFor(AgentPersona.QA_ENGINEER)
+        );
+        qa.setWorkspace(ws);
+
+        const handoff: HandoffDocument = {
+          ...this.handoffMgr.create(
+            AgentPersona.ORCHESTRATOR,
+            AgentPersona.DEVELOPER,
+            primaryStoryId,
+            'ready',
+            {
+              techStack: `${state.currentSprintPlan.techStack.language}, ${state.currentSprintPlan.techStack.runtime}, ${state.currentSprintPlan.techStack.framework}`,
+              taskId: task.taskId,
+              taskModule: task.module,
+              taskStoryIds: task.storyIds.join(','),
+            },
+            `Implement task ${task.taskId}`,
+            []
+          ),
+          architecturePlan: {
+            planId: state.currentSprintPlan.planId,
+            level: state.currentSprintPlan.level,
+            scopeKey: state.currentSprintPlan.scopeKey,
+          },
+          task: {
+            taskId: task.taskId,
+            module: task.module,
+            type: task.type,
+          },
+        };
+
+        let qaAttempts = 0;
+        let taskPassed = false;
+        let nextDevInput: HandoffDocument | null = handoff;
+
+        while (qaAttempts < 3) {
+          const storyForDev = {
+            ...baseStory,
+            state: StoryState.IN_PROGRESS,
+            updatedAt: new Date().toISOString(),
+          };
+          const devHandoff = await dev.execute(nextDevInput, storyForDev);
+          let qaStory = this.reloadStory(ws, primaryStoryId, storyForDev);
+          if (qaStory.state !== StoryState.IN_REVIEW) {
+            qaStory = {
+              ...qaStory,
+              state: StoryState.IN_REVIEW,
+            };
+          }
+
+          const qaHandoff = await qa.execute(devHandoff, qaStory);
+          latestHandoffs.set(primaryStoryId, qaHandoff);
+          currentStories.set(primaryStoryId, this.reloadStory(ws, primaryStoryId, qaStory));
+
+          const verdict = qaHandoff.stateOfWorld['verdict'];
+          if (verdict === 'PASS') {
+            completedTaskIds.add(task.taskId);
+            taskPassed = true;
+            for (const storyId of task.storyIds) {
+              completedStoryIds.add(storyId);
+              latestHandoffs.set(storyId, qaHandoff);
+            }
+            break;
+          }
+
+          if (verdict === 'BLOCKED') {
+            blockedTaskIds.add(task.taskId);
+            for (const storyId of task.storyIds) {
+              blockedStoryIds.add(storyId);
+            }
+            break;
+          }
+
+          qaAttempts += 1;
+          nextDevInput = qaHandoff;
+        }
+
+        if (!taskPassed && !blockedTaskIds.has(task.taskId)) {
+          blockedTaskIds.add(task.taskId);
+          for (const storyId of task.storyIds) {
+            blockedStoryIds.add(storyId);
+          }
+        }
+      }
+
+      const remainingGroups = scheduleGroups.filter((candidate) => candidate.groupId > group.groupId);
+      const checkpointState: PlannedSprintState = {
+        ...state,
+        checkpoint: {
+          checkpointId: state.checkpoint?.checkpointId ??
+            (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `checkpoint-${Date.now()}`),
+          sprintId: state.taskPlan.sprintId,
+          runId: state.checkpoint?.runId ?? `${sprintWs.projectId}-${sprintWs.storyId}-${Date.now()}`,
+          activeSprintPlanId: state.currentSprintPlan.planId,
+          activeGlobalPlanId: state.currentGlobalPlanId,
+          revisionCount: state.revisionCount,
+          completedTaskIds: [...completedTaskIds],
+          blockedTaskIds: [...blockedTaskIds],
+          remainingTaskSchedule: { groups: remainingGroups },
+          lastCompletedGroupId: group.groupId,
+          createdAt: state.checkpoint?.createdAt ?? new Date().toISOString(),
+        },
+      };
+      this.saveCheckpoint(sprintWs, checkpointState);
+      state = checkpointState;
+    }
+
+    const techWriter = new TechnicalWriterAgent(
+      agentConfigs[AgentPersona.TECHNICAL_WRITER]!,
+      this.workspaceMgr,
+      this.handoffMgr,
+      clientFor(AgentPersona.TECHNICAL_WRITER)
+    );
+
+    const results: AppBuilderResult[] = [];
+    for (const original of stories) {
+      const currentStory = currentStories.get(original.id) ?? original;
+      const hasCompletedTask = completedStoryIds.has(original.id);
+
+      if (!hasCompletedTask) {
+        results.push({
+          storyId: original.id,
+          gitBranch: `story/${original.id}`,
+          prUrl: undefined,
+          commitShas: [],
+          testResults: { passed: 0, failed: 1, skipped: 0 },
+          duration: Date.now() - sprintStart,
+        });
+        continue;
+      }
+
+      const ws = this.workspaceMgr.createWorkspace(this.config.projectId, original.id);
+      techWriter.setWorkspace(ws);
+      const writerInput = latestHandoffs.get(original.id) ?? this.handoffMgr.create(
+        AgentPersona.ORCHESTRATOR,
+        AgentPersona.TECHNICAL_WRITER,
+        original.id,
+        'ready',
+        {},
+        'Write README and docs',
+        []
+      );
+
+      const writerHandoff = await techWriter.execute(writerInput, currentStory);
+      latestHandoffs.set(original.id, writerHandoff);
+      this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
+
+      const branchName = writerHandoff.stateOfWorld['branchName'] ?? `story/${original.id}`;
+      const commitSha = writerHandoff.stateOfWorld['commitSha'] ?? '';
+      let prUrl = '';
+      if (this.config.createPullRequest) {
+        prUrl = await this.config.createPullRequest(currentStory, branchName, commitSha);
+      }
+
+      let nextStory = this.reloadStory(ws, original.id, currentStory);
+      if (nextStory.state !== StoryState.DONE) {
+        nextStory = { ...nextStory, state: StoryState.DONE, updatedAt: new Date().toISOString() };
+      }
+      nextStory = this.stateMachine.transition(nextStory, StoryState.PR_OPEN);
+      this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(nextStory, null, 2));
+      this.updateLedger(nextStory, AgentPersona.ORCHESTRATOR);
+      currentStories.set(original.id, nextStory);
+
+      results.push({
+        storyId: original.id,
+        gitBranch: branchName,
+        prUrl: prUrl || undefined,
+        commitShas: commitSha ? [commitSha] : [],
+        testResults: {
+          passed: blockedStoryIds.has(original.id) ? 0 : 1,
+          failed: blockedStoryIds.has(original.id) ? 1 : 0,
+          skipped: 0,
+        },
+        duration: Date.now() - sprintStart,
+      });
+    }
+
+    if (blockedTaskIds.size === 0) {
+      this.checkpointMgr.clear(sprintWs);
+    }
+    return results;
   }
 
   // ── Per-story pipeline ─────────────────────────────────────────────────────
@@ -499,5 +961,75 @@ export class SprintOrchestrator {
       testResults: { passed: 0, failed: 1, skipped: 0 },
       duration: 0,
     };
+  }
+
+  private async handleRevisionLoop(
+    ws: WorkspaceState,
+    state: PlannedSprintState,
+    trigger: PlanRevisionTrigger,
+    planner: RevisionPlanner,
+    decomposer: RevisionDecomposer,
+    stories: Story[],
+    humanGate: HumanGate = this.humanGate
+  ): Promise<PlannedSprintState> {
+    const effectiveState = this.plannedSprintState ?? state;
+    const globalPlan = this.architecturePlanMgr.load(ws, effectiveState.currentGlobalPlanId);
+    if (!globalPlan) {
+      throw new Error(`Global architecture plan not found: ${effectiveState.currentGlobalPlanId}`);
+    }
+
+    const updatedState = await executeRevisionLoop({
+      state: effectiveState,
+      trigger,
+      planner,
+      decomposer,
+      stories,
+      humanGate,
+      globalPlan,
+    });
+
+    if (updatedState.revisionCount > effectiveState.revisionCount) {
+      this.saveCheckpoint(ws, updatedState);
+    }
+    this.plannedSprintState = updatedState;
+    return updatedState;
+  }
+
+  private saveCheckpoint(ws: WorkspaceState, state: PlannedSprintState): void {
+    const existing = state.checkpoint;
+    const checkpoint: SprintCheckpoint = {
+      checkpointId: existing?.checkpointId ?? (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `checkpoint-${Date.now()}`),
+      sprintId: state.taskPlan.sprintId,
+      runId: existing?.runId ?? `${ws.projectId}-${ws.storyId}-${Date.now()}`,
+      activeSprintPlanId: state.currentSprintPlan.planId,
+      activeGlobalPlanId: state.currentGlobalPlanId,
+      revisionCount: state.revisionCount,
+      completedTaskIds: existing?.completedTaskIds ?? [],
+      blockedTaskIds: existing?.blockedTaskIds ?? [],
+      remainingTaskSchedule: existing?.remainingTaskSchedule ?? state.taskPlan.schedule,
+      lastCompletedGroupId: existing?.lastCompletedGroupId,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    };
+
+    this.checkpointMgr.save(ws, checkpoint);
+    this.plannedSprintState = {
+      ...state,
+      checkpoint,
+    };
+  }
+
+  private loadCheckpoint(ws: WorkspaceState): SprintCheckpoint | null {
+    return this.checkpointMgr.load(ws);
+  }
+
+  private readSprintTaskPlan(ws: WorkspaceState): import('@splinty/core').SprintTaskPlan | null {
+    try {
+      const raw = this.workspaceMgr.readFile(ws, 'artifacts/sprint-task-plan.json');
+      return SprintTaskPlanSchema.parse(JSON.parse(raw));
+    } catch {
+      return null;
+    }
   }
 }

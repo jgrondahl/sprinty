@@ -2,19 +2,29 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { SprintOrchestrator } from './orchestrator';
+import { SprintOrchestrator, executeRevisionLoop } from './orchestrator';
+import { ArchitecturePlannerAgent } from './architecture-planner';
 import {
   AgentPersona,
+  ArchitecturePlanManager,
   ResumeManager,
+  StorySchema,
   StoryState,
   StorySource,
+  TaskDecomposer,
   WorkspaceManager,
   MockSandbox,
   ArchitectureEnforcer,
   makeSuccessResult,
+  type ArchitecturePlan,
+  type HumanGate,
+  type PlanRevisionTrigger,
+  type PlannedSprintState,
   type ResumePoint,
+  type SprintTaskPlan,
   type Story,
   type LlmClient,
+  type WorkspaceState,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -149,6 +159,97 @@ const qaBlockedResp = {
   additionalTests: [],
   report: '# QA Report\n\nVerdict: BLOCKED',
 };
+
+const makePlanForStories = (storyIds: string[], level: 'global' | 'sprint', id: string): ArchitecturePlan => ({
+  planId: id,
+  schemaVersion: 1,
+  projectId: 'test-proj',
+  level,
+  scopeKey: level === 'global' ? 'global' : 'sprint:sprint-1',
+  sprintId: level === 'sprint' ? 'sprint-1' : undefined,
+  parentPlanId: level === 'sprint' ? 'global-plan-ps' : undefined,
+  status: 'active',
+  createdAt: now,
+  revisionNumber: 0,
+  techStack: {
+    language: 'TypeScript',
+    runtime: 'Node.js',
+    framework: 'Bun',
+    testFramework: 'bun:test',
+    buildTool: 'bun',
+    rationale: 'test',
+  },
+  modules: [
+    {
+      name: 'auth-module',
+      description: 'auth',
+      responsibility: 'auth',
+      directory: 'src/auth',
+      exposedInterfaces: ['AuthService'],
+      dependencies: [],
+      owningStories: storyIds,
+    },
+  ],
+  storyModuleMapping: storyIds.map((storyId) => ({
+    storyId,
+    modules: ['auth-module'],
+    primaryModule: 'auth-module',
+    estimatedFiles: ['src/auth/auth-service.ts'],
+  })),
+  executionOrder: storyIds.map((storyId, index) => ({
+    groupId: index + 1,
+    storyIds: [storyId],
+    rationale: 'ordered',
+    dependsOn: index === 0 ? [] : [index],
+  })),
+  decisions: [
+    {
+      id: 'dec-ps-1',
+      title: 'Use TS',
+      context: 'test',
+      decision: 'Use TypeScript',
+      consequences: 'typed',
+      status: 'accepted',
+    },
+  ],
+  constraints: [
+    {
+      id: 'constraint-ps-1',
+      type: 'boundary',
+      description: 'module boundary',
+      rule: 'import from public interfaces',
+      severity: 'error',
+    },
+  ],
+});
+
+const makeTaskPlanForStories = (storyIds: string[]): SprintTaskPlan => ({
+  sprintId: 'sprint-1',
+  planId: 'sprint-plan-ps',
+  parentGlobalPlanId: 'global-plan-ps',
+  schemaVersion: 1,
+  tasks: storyIds.map((storyId, index) => ({
+    taskId: `task-${index + 1}`,
+    storyIds: [storyId],
+    module: 'auth-module',
+    type: 'create',
+    description: `implement ${storyId}`,
+    targetFiles: [`src/auth/${storyId}.ts`],
+    ownedFiles: [`src/auth/${storyId}.ts`],
+    dependencies: index === 0 ? [] : [`task-${index}`],
+    inputs: [],
+    expectedOutputs: [`src/auth/${storyId}.ts`],
+    acceptanceCriteria: ['Given valid creds, Then I get a JWT'],
+  })),
+  schedule: {
+    groups: storyIds.map((_, index) => ({
+      groupId: index + 1,
+      taskIds: [`task-${index + 1}`],
+      dependsOn: index === 0 ? [] : [index],
+    })),
+  },
+  integrationTasks: [],
+});
 
 // ─── Mock git factory ─────────────────────────────────────────────────────────
 
@@ -619,5 +720,600 @@ describe('SprintOrchestrator — resume points', () => {
     const results = await orch.run([makeRawStory()]);
     expect(results[0]!.testResults.failed).toBe(0);
     expect(callLog.calls).toBe(3);
+  });
+});
+
+describe('SprintOrchestrator — planned-sprint mode', () => {
+  afterEach(() => {
+    ArchitecturePlannerAgent.prototype.planSprint = originalPlanSprint;
+    TaskDecomposer.prototype.decompose = originalDecompose;
+  });
+
+  const originalPlanSprint = ArchitecturePlannerAgent.prototype.planSprint;
+  const originalDecompose = TaskDecomposer.prototype.decompose;
+
+  it('happy path runs end-to-end planned sprint across two stories', async () => {
+    const story1 = makeRawStory({ id: 'story-ps-1', title: 'Story PS One' });
+    const story2 = makeRawStory({ id: 'story-ps-2', title: 'Story PS Two' });
+
+    const globalPlan = makePlanForStories([story1.id, story2.id], 'global', 'global-plan-ps');
+    const sprintPlan = makePlanForStories([story1.id, story2.id], 'sprint', 'sprint-plan-ps');
+    const taskPlan = makeTaskPlanForStories([story1.id, story2.id]);
+
+    ArchitecturePlannerAgent.prototype.planSprint = async function () {
+      return {
+        globalPlan,
+        sprintPlan,
+        globalScore: {
+          cohesion: 95,
+          dependencySanity: 95,
+          stackConsistency: 95,
+          overall: 95,
+          status: 'pass',
+          findings: [],
+        },
+        sprintScore: {
+          cohesion: 94,
+          dependencySanity: 94,
+          stackConsistency: 94,
+          overall: 94,
+          status: 'pass',
+          findings: [],
+        },
+      };
+    };
+
+    TaskDecomposer.prototype.decompose = function () {
+      return taskPlan;
+    };
+
+    const client = makeQueuedClient([
+      bizResp, poResp,
+      bizResp, poResp,
+      devResp, qaPassResp,
+      devResp, qaPassResp,
+      readmeResp, readmeResp,
+    ]);
+
+    let prCalls = 0;
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      executionMode: 'planned-sprint',
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      createPullRequest: async (_story, _branch, _sha) => {
+        prCalls += 1;
+        return `https://github.com/owner/repo/pull/${prCalls}`;
+      },
+    });
+
+    const results = await orch.run([story1, story2]);
+
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.testResults.failed === 0)).toBe(true);
+    expect(prCalls).toBe(2);
+
+    const story1Json = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, 'test-proj', 'stories', 'story-ps-1', 'story.json'), 'utf-8')
+    ) as Story;
+    const story2Json = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, 'test-proj', 'stories', 'story-ps-2', 'story.json'), 'utf-8')
+    ) as Story;
+
+    expect(story1Json.state).toBe(StoryState.PR_OPEN);
+    expect(story2Json.state).toBe(StoryState.PR_OPEN);
+    expect(fs.existsSync(path.join(tmpDir, 'test-proj', 'stories', 'sprint', 'sprint-checkpoint.json'))).toBe(false);
+  });
+
+  it('routes by executionMode to planned-sprint or story pipeline', async () => {
+    const plannedClient = makeQueuedClient([]);
+    const planned = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      executionMode: 'planned-sprint',
+      defaultClient: plannedClient,
+      gitFactory: makeMockGit(),
+    });
+
+    let plannedCalled = 0;
+    let storyCalledOnPlanned = 0;
+    (planned as unknown as { runPlannedSprint: (stories: Story[]) => Promise<AppBuilderResult[]> }).runPlannedSprint = async (stories) => {
+      plannedCalled += 1;
+      return stories.map((s) => ({
+        storyId: s.id,
+        gitBranch: `story/${s.id}`,
+        commitShas: [],
+        testResults: { passed: 1, failed: 0, skipped: 0 },
+        duration: 1,
+      }));
+    };
+    (planned as unknown as { runStory: (story: Story) => Promise<AppBuilderResult> }).runStory = async (story) => {
+      storyCalledOnPlanned += 1;
+      return {
+        storyId: story.id,
+        gitBranch: `story/${story.id}`,
+        commitShas: [],
+        testResults: { passed: 1, failed: 0, skipped: 0 },
+        duration: 1,
+      };
+    };
+
+    await planned.run([makeRawStory({ id: 'routing-planned' })]);
+    expect(plannedCalled).toBe(1);
+    expect(storyCalledOnPlanned).toBe(0);
+
+    const storyClient = makeQueuedClient([]);
+    const storyMode = new SprintOrchestrator({
+      projectId: 'test-proj-2',
+      workspaceBaseDir: tmpDir,
+      executionMode: 'story',
+      defaultClient: storyClient,
+      gitFactory: makeMockGit(),
+    });
+
+    let storyCalled = 0;
+    let plannedCalledOnStory = 0;
+    (storyMode as unknown as { runStory: (story: Story) => Promise<AppBuilderResult> }).runStory = async (story) => {
+      storyCalled += 1;
+      return {
+        storyId: story.id,
+        gitBranch: `story/${story.id}`,
+        commitShas: [],
+        testResults: { passed: 1, failed: 0, skipped: 0 },
+        duration: 1,
+      };
+    };
+    (storyMode as unknown as { runPlannedSprint: (stories: Story[]) => Promise<AppBuilderResult[]> }).runPlannedSprint = async (_stories) => {
+      plannedCalledOnStory += 1;
+      return [];
+    };
+
+    await storyMode.run([makeRawStory({ id: 'routing-story' })]);
+    expect(storyCalled).toBe(1);
+    expect(plannedCalledOnStory).toBe(0);
+  });
+
+  it('marks blocked task and continues remaining tasks', async () => {
+    const story1 = makeRawStory({ id: 'story-block-1' });
+    const story2 = makeRawStory({ id: 'story-block-2' });
+    const globalPlan = makePlanForStories([story1.id, story2.id], 'global', 'global-plan-ps');
+    const sprintPlan = makePlanForStories([story1.id, story2.id], 'sprint', 'sprint-plan-ps');
+    const taskPlan = makeTaskPlanForStories([story1.id, story2.id]);
+
+    ArchitecturePlannerAgent.prototype.planSprint = async function () {
+      return {
+        globalPlan,
+        sprintPlan,
+        globalScore: { cohesion: 90, dependencySanity: 90, stackConsistency: 90, overall: 90, status: 'pass', findings: [] },
+        sprintScore: { cohesion: 90, dependencySanity: 90, stackConsistency: 90, overall: 90, status: 'pass', findings: [] },
+      };
+    };
+
+    TaskDecomposer.prototype.decompose = function () {
+      return taskPlan;
+    };
+
+    const client = makeQueuedClient([
+      bizResp, poResp,
+      bizResp, poResp,
+      devResp, qaBlockedResp,
+      devResp, qaPassResp,
+      readmeResp,
+    ]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      executionMode: 'planned-sprint',
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([story1, story2]);
+    const blocked = results.find((r) => r.storyId === 'story-block-1');
+    const passed = results.find((r) => r.storyId === 'story-block-2');
+    expect(blocked).toBeTruthy();
+    expect(blocked!.testResults.failed).toBe(1);
+    expect(passed).toBeTruthy();
+    expect(passed!.testResults.failed).toBe(0);
+  });
+
+  it('resumes from checkpoint by skipping completed groups', async () => {
+    const story1 = makeRawStory({ id: 'story-resume-1' });
+    const story2 = makeRawStory({ id: 'story-resume-2' });
+    const workspaceMgr = new WorkspaceManager(tmpDir);
+    const sprintWs = workspaceMgr.createWorkspace('test-proj', 'sprint');
+    const planManager = new ArchitecturePlanManager(workspaceMgr);
+
+    const globalPlan = makePlanForStories([story1.id, story2.id], 'global', 'global-plan-ps');
+    const sprintPlan = makePlanForStories([story1.id, story2.id], 'sprint', 'sprint-plan-ps');
+    planManager.save(sprintWs, globalPlan);
+    planManager.save(sprintWs, sprintPlan);
+
+    const taskPlan = makeTaskPlanForStories([story1.id, story2.id]);
+    workspaceMgr.writeFile(sprintWs, 'artifacts/sprint-task-plan.json', JSON.stringify(taskPlan, null, 2));
+    workspaceMgr.writeFile(
+      sprintWs,
+      'sprint-checkpoint.json',
+      JSON.stringify({
+        checkpointId: 'cp-1',
+        sprintId: taskPlan.sprintId,
+        runId: 'run-1',
+        activeSprintPlanId: sprintPlan.planId,
+        activeGlobalPlanId: globalPlan.planId,
+        revisionCount: 0,
+        completedTaskIds: ['task-1'],
+        blockedTaskIds: [],
+        remainingTaskSchedule: {
+          groups: taskPlan.schedule.groups.filter((group) => group.groupId > 1),
+        },
+        lastCompletedGroupId: 1,
+        createdAt: now,
+      },
+      null,
+      2
+      )
+    );
+
+    const callLog = { calls: 0 };
+    const client = makeQueuedClient([devResp, qaPassResp, readmeResp, readmeResp], callLog);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      executionMode: 'planned-sprint',
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([story1, story2]);
+    expect(results).toHaveLength(2);
+    expect(callLog.calls).toBe(4);
+    expect(fs.existsSync(path.join(tmpDir, 'test-proj', 'stories', 'sprint', 'sprint-checkpoint.json'))).toBe(false);
+  });
+});
+
+describe('SprintOrchestrator — revision loop and checkpoint', () => {
+  const makeStories = (): Story[] => [
+    StorySchema.parse({
+      id: 'story-rev-1',
+      title: 'Story revision test',
+      description: 'Revision flow',
+      acceptanceCriteria: ['works'],
+      state: StoryState.SPRINT_READY,
+      source: StorySource.FILE,
+      sourceId: 'STORY-REV-1',
+      storyPoints: 2,
+      domain: 'core',
+      tags: ['core'],
+      workspacePath: '',
+      createdAt: now,
+      updatedAt: now,
+    }),
+  ];
+
+  const makePlan = (id: string, level: 'global' | 'sprint'): ArchitecturePlan => ({
+    planId: id,
+    schemaVersion: 1,
+    projectId: 'test-proj',
+    level,
+    scopeKey: level === 'global' ? 'global' : 'sprint:sprint-rev',
+    sprintId: level === 'sprint' ? 'sprint-rev' : undefined,
+    parentPlanId: level === 'sprint' ? 'global-plan-1' : undefined,
+    status: 'active',
+    createdAt: now,
+    revisionNumber: 0,
+    techStack: {
+      language: 'TypeScript',
+      runtime: 'Node.js',
+      framework: 'Bun',
+      testFramework: 'bun:test',
+      buildTool: 'bun',
+      rationale: 'consistency',
+    },
+    modules: [
+      {
+        name: 'core-module',
+        description: 'core module',
+        responsibility: 'core logic',
+        directory: 'src/modules/core',
+        exposedInterfaces: ['CoreService'],
+        dependencies: [],
+        owningStories: ['story-rev-1'],
+      },
+    ],
+    storyModuleMapping: [
+      {
+        storyId: 'story-rev-1',
+        modules: ['core-module'],
+        primaryModule: 'core-module',
+        estimatedFiles: ['src/modules/core/service.ts'],
+      },
+    ],
+    executionOrder: [{ groupId: 1, storyIds: ['story-rev-1'], rationale: 'single group', dependsOn: [] }],
+    decisions: [
+      {
+        id: 'dec-1',
+        title: 'use ts',
+        context: 'runtime',
+        decision: 'ts on bun',
+        consequences: 'typed',
+        status: 'accepted',
+      },
+    ],
+    constraints: [
+      {
+        id: 'constraint-1',
+        type: 'dependency',
+        description: 'boundaries',
+        rule: 'only interfaces',
+        severity: 'error',
+      },
+    ],
+  });
+
+  const makeTaskPlan = (planId: string): SprintTaskPlan => ({
+    sprintId: 'sprint-rev',
+    planId,
+    parentGlobalPlanId: 'global-plan-1',
+    schemaVersion: 1,
+    tasks: [
+      {
+        taskId: 'task-rev-1',
+        storyIds: ['story-rev-1'],
+        module: 'core-module',
+        type: 'create',
+        description: 'implement',
+        targetFiles: ['src/modules/core/service.ts'],
+        ownedFiles: ['src/modules/core/service.ts'],
+        dependencies: [],
+        inputs: [],
+        expectedOutputs: ['src/modules/core/service.ts'],
+        acceptanceCriteria: ['works'],
+      },
+    ],
+    schedule: {
+      groups: [{ groupId: 1, taskIds: ['task-rev-1'], dependsOn: [] }],
+    },
+    integrationTasks: [],
+  });
+
+  const makeState = (): PlannedSprintState => ({
+    currentSprintPlan: makePlan('sprint-plan-1', 'sprint'),
+    currentGlobalPlanId: 'global-plan-1',
+    taskPlan: makeTaskPlan('sprint-plan-1'),
+    revisionCount: 0,
+    maxRevisions: 1,
+    storyRevisionCounts: { 'story-rev-1': 0 },
+    maxRevisionsPerStory: 1,
+  });
+
+  const makeTrigger = (overrides: Partial<PlanRevisionTrigger> = {}): PlanRevisionTrigger => ({
+    reason: 'architecture-violation',
+    description: 'revision needed',
+    evidence: ['missing-interface'],
+    timestamp: now,
+    ...overrides,
+  });
+
+  class MockHumanGate implements HumanGate {
+    public readonly calls: PlanRevisionTrigger[] = [];
+
+    constructor(private readonly approved: boolean) {}
+
+    async requestApproval(trigger: PlanRevisionTrigger): Promise<boolean> {
+      this.calls.push(trigger);
+      return this.approved;
+    }
+  }
+
+  const makePlanner = (revisedPlan: ArchitecturePlan) => ({
+    reviseSprint: async () => ({
+      revisedPlan,
+      score: {
+        cohesion: 90,
+        dependencySanity: 90,
+        stackConsistency: 90,
+        overall: 90,
+        status: 'pass' as const,
+        findings: [],
+      },
+      supersededPlanId: 'sprint-plan-1',
+      newDecision: {
+        id: 'dec-2',
+        title: 'revise',
+        context: 'triggered',
+        decision: 'adjust interfaces',
+        consequences: 'safer',
+        status: 'accepted' as const,
+      },
+    }),
+  });
+
+  const makeDecomposer = (taskPlan: SprintTaskPlan): Pick<TaskDecomposer, 'decompose'> => ({
+    decompose: () => taskPlan,
+  });
+
+  const createWorkspace = (): { ws: WorkspaceState; workspaceManager: WorkspaceManager; planManager: ArchitecturePlanManager } => {
+    const workspaceManager = new WorkspaceManager(tmpDir);
+    const ws = workspaceManager.createWorkspace('test-proj', 'story-revision');
+    const planManager = new ArchitecturePlanManager(workspaceManager);
+    return { ws, workspaceManager, planManager };
+  };
+
+  it('handleRevisionLoop applies sprint-level revision within limits', async () => {
+    const state = makeState();
+    const revisedPlan = {
+      ...makePlan('sprint-plan-2', 'sprint'),
+      revisionNumber: 1,
+      supersedesPlanId: 'sprint-plan-1',
+    };
+    const revisedTaskPlan = makeTaskPlan('sprint-plan-2');
+    const stories = makeStories();
+    const gate = new MockHumanGate(true);
+    const planner = makePlanner(revisedPlan);
+    const decomposer = makeDecomposer(revisedTaskPlan);
+
+    const { ws, planManager } = createWorkspace();
+    planManager.save(ws, makePlan('global-plan-1', 'global'));
+
+    const orch = new SprintOrchestrator({ projectId: 'test-proj', workspaceBaseDir: tmpDir, humanGate: gate });
+    const method = (orch as unknown as {
+      handleRevisionLoop: (
+        wsArg: WorkspaceState,
+        stateArg: PlannedSprintState,
+        triggerArg: PlanRevisionTrigger,
+        plannerArg: { reviseSprint: () => Promise<unknown> },
+        decomposerArg: Pick<TaskDecomposer, 'decompose'>,
+        storiesArg: Story[],
+        humanGateArg: HumanGate
+      ) => Promise<PlannedSprintState>;
+    }).handleRevisionLoop;
+
+    const updated = await method.call(orch, ws, state, makeTrigger(), planner, decomposer, stories, gate);
+    expect(updated.currentSprintPlan.planId).toBe('sprint-plan-2');
+    expect(updated.taskPlan.planId).toBe('sprint-plan-2');
+    expect(updated.revisionCount).toBe(1);
+    expect(updated.storyRevisionCounts['story-rev-1']).toBe(1);
+    expect(gate.calls).toHaveLength(0);
+  });
+
+  it('handleRevisionLoop calls humanGate when sprint limit exceeded', async () => {
+    const state = { ...makeState(), revisionCount: 1, maxRevisions: 1 };
+    const revisedPlan = {
+      ...makePlan('sprint-plan-2', 'sprint'),
+      revisionNumber: 1,
+      supersedesPlanId: 'sprint-plan-1',
+    };
+    const stories = makeStories();
+    const gate = new MockHumanGate(true);
+    const planner = makePlanner(revisedPlan);
+    const decomposer = makeDecomposer(makeTaskPlan('sprint-plan-2'));
+
+    const { ws, planManager } = createWorkspace();
+    planManager.save(ws, makePlan('global-plan-1', 'global'));
+
+    const orch = new SprintOrchestrator({ projectId: 'test-proj', workspaceBaseDir: tmpDir, humanGate: gate });
+    const method = (orch as unknown as {
+      handleRevisionLoop: (
+        wsArg: WorkspaceState,
+        stateArg: PlannedSprintState,
+        triggerArg: PlanRevisionTrigger,
+        plannerArg: { reviseSprint: () => Promise<unknown> },
+        decomposerArg: Pick<TaskDecomposer, 'decompose'>,
+        storiesArg: Story[],
+        humanGateArg: HumanGate
+      ) => Promise<PlannedSprintState>;
+    }).handleRevisionLoop;
+
+    const updated = await method.call(orch, ws, state, makeTrigger(), planner, decomposer, stories, gate);
+    expect(gate.calls).toHaveLength(1);
+    expect(updated.revisionCount).toBe(2);
+  });
+
+  it('handleRevisionLoop calls humanGate for global-level revision', async () => {
+    const state = makeState();
+    const revisedPlan = {
+      ...makePlan('sprint-plan-2', 'sprint'),
+      revisionNumber: 1,
+      supersedesPlanId: 'sprint-plan-1',
+    };
+    const stories = makeStories();
+    const gate = new MockHumanGate(true);
+    const planner = makePlanner(revisedPlan);
+    const decomposer = makeDecomposer(makeTaskPlan('sprint-plan-2'));
+
+    const { ws, planManager } = createWorkspace();
+    planManager.save(ws, makePlan('global-plan-1', 'global'));
+
+    const orch = new SprintOrchestrator({ projectId: 'test-proj', workspaceBaseDir: tmpDir, humanGate: gate });
+    const method = (orch as unknown as {
+      handleRevisionLoop: (
+        wsArg: WorkspaceState,
+        stateArg: PlannedSprintState,
+        triggerArg: PlanRevisionTrigger,
+        plannerArg: { reviseSprint: () => Promise<unknown> },
+        decomposerArg: Pick<TaskDecomposer, 'decompose'>,
+        storiesArg: Story[],
+        humanGateArg: HumanGate
+      ) => Promise<PlannedSprintState>;
+    }).handleRevisionLoop;
+
+    const trigger = makeTrigger({ evidence: ['module-boundary-change'] });
+    const updated = await method.call(orch, ws, state, trigger, planner, decomposer, stories, gate);
+    expect(gate.calls).toHaveLength(1);
+    expect(updated.revisionCount).toBe(1);
+  });
+
+  it('executeRevisionLoop returns unchanged state when humanGate denies approval', async () => {
+    const state = makeState();
+    const revisedPlan = {
+      ...makePlan('sprint-plan-2', 'sprint'),
+      revisionNumber: 1,
+      supersedesPlanId: 'sprint-plan-1',
+    };
+    const planner = makePlanner(revisedPlan);
+    const decomposer = makeDecomposer(makeTaskPlan('sprint-plan-2'));
+    const gate = new MockHumanGate(false);
+
+    const updated = await executeRevisionLoop({
+      state,
+      trigger: makeTrigger({ evidence: ['module-boundary-change'] }),
+      planner,
+      decomposer,
+      stories: makeStories(),
+      humanGate: gate,
+      globalPlan: makePlan('global-plan-1', 'global'),
+    });
+
+    expect(updated).toEqual(state);
+    expect(gate.calls).toHaveLength(1);
+  });
+
+  it('executeRevisionLoop proceeds when humanGate approves global escalation', async () => {
+    const state = makeState();
+    const revisedPlan = {
+      ...makePlan('sprint-plan-2', 'sprint'),
+      revisionNumber: 1,
+      supersedesPlanId: 'sprint-plan-1',
+    };
+    const planner = makePlanner(revisedPlan);
+    const decomposer = makeDecomposer(makeTaskPlan('sprint-plan-2'));
+    const gate = new MockHumanGate(true);
+
+    const updated = await executeRevisionLoop({
+      state,
+      trigger: makeTrigger({ evidence: ['module-boundary-change'] }),
+      planner,
+      decomposer,
+      stories: makeStories(),
+      humanGate: gate,
+      globalPlan: makePlan('global-plan-1', 'global'),
+    });
+
+    expect(updated.currentSprintPlan.planId).toBe('sprint-plan-2');
+    expect(updated.revisionCount).toBe(1);
+    expect(gate.calls).toHaveLength(1);
+  });
+
+  it('checkpoint save and load roundtrip persists sprint checkpoint', () => {
+    const state = makeState();
+    const orch = new SprintOrchestrator({ projectId: 'test-proj', workspaceBaseDir: tmpDir });
+    const workspaceManager = new WorkspaceManager(tmpDir);
+    const ws = workspaceManager.createWorkspace('test-proj', 'story-revision-checkpoint');
+
+    const saveCheckpoint = (orch as unknown as {
+      saveCheckpoint: (wsArg: WorkspaceState, stateArg: PlannedSprintState) => void;
+    }).saveCheckpoint;
+    const loadCheckpoint = (orch as unknown as {
+      loadCheckpoint: (wsArg: WorkspaceState) => unknown;
+    }).loadCheckpoint;
+
+    saveCheckpoint.call(orch, ws, state);
+    const loaded = loadCheckpoint.call(orch, ws) as { activeSprintPlanId: string; activeGlobalPlanId: string } | null;
+    expect(loaded).not.toBeNull();
+    expect(loaded!.activeSprintPlanId).toBe('sprint-plan-1');
+    expect(loaded!.activeGlobalPlanId).toBe('global-plan-1');
   });
 });
