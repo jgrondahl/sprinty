@@ -70,7 +70,7 @@ interface ResourceLimitViolation {
 }
 
 interface SandboxConfig {
-  image: string;              // e.g. "node:20-slim", "python:3.12-slim"
+  image: string;              // digest-pinned image ref, e.g. "node:20-slim@sha256:..."
   timeoutMs: number;          // per-command timeout
   memoryLimitMb: number;      // container memory cap
   cpuLimit: number;           // CPU shares
@@ -87,6 +87,28 @@ interface SandboxConfig {
 - CPU and memory cgroups enforced
 - Filesystem restricted to the workspace mount
 - Command timeout kills the container
+
+#### Build Environment Parity (Local = CI)
+
+Sandbox images must be **version pinned and shared** between local runs and CI to avoid "works locally, fails in pipeline" drift.
+
+```typescript
+interface SandboxImageLockfile {
+  schemaVersion: number;
+  images: Array<{
+    runtime: 'node' | 'python';
+    image: string;             // e.g. "node:20-slim"
+    digest: string;            // e.g. "sha256:abc123..."
+    updatedAt: string;
+  }>;
+}
+```
+
+Policy:
+- The effective runtime image is always `${image}@${digest}` from the lockfile.
+- Local orchestration and CI both read the same lockfile (`.splinty/sandbox-images.lock.json`).
+- Unpinned images are rejected in `planned-sprint` mode.
+- Image updates are explicit (regenerate lockfile + re-run sandbox smoke tests).
 
 **Resource limit enforcement**: Generated code can produce runaway processes, infinite loops, or excessive memory consumption. The sandbox must enforce all configured limits via Docker cgroups and return structured telemetry when violations occur:
 
@@ -551,6 +573,72 @@ interface ArchitectureConstraint {
   // as the execution plan while reading global constraints via parentPlanId.
 ```
 
+#### Deterministic PlanDigest (Context Compression)
+
+Large plans cannot be passed verbatim to every agent call. The orchestrator creates a deterministic `PlanDigest` for each task so context stays bounded and reproducible.
+
+```typescript
+interface PlanDigest {
+  digestId: string;
+  sourcePlanId: string;
+  level: 'global' | 'sprint';
+  taskId: string;
+  module: string;
+  includedModules: string[];         // module + direct dependencies only
+  constraints: ArchitectureConstraint[];
+  exposedInterfaces: Array<{
+    module: string;
+    names: string[];
+  }>;
+  maxChars: number;                  // hard cap for serialized payload
+  truncated: boolean;
+}
+```
+
+Determinism contract:
+- Given the same `sourcePlanId`, `taskId`, module graph, and constraint set, `PlanDigest` must be byte-identical.
+- Non-deterministic fields (timestamps, random IDs, environment-specific absolute paths) are excluded from digest input.
+
+Compression algorithm (deterministic, no LLM):
+1. Start with `task.module`
+2. Include direct dependency modules from `ModuleDefinition.dependencies`
+3. Include only constraints whose rules mention included modules, task files, or global stack invariants
+4. Include only `exposedInterfaces` for included modules
+5. Serialize in stable sort order (`module.name` asc, then `constraint.id` asc) and enforce `maxChars` (default: 24,000 chars)
+6. If overflow persists, trim lowest-priority constraints first and set `truncated=true`; never drop the task module
+
+Priority order for retention under cap:
+1) Task module interfaces and constraints
+2) Direct dependency module interfaces
+3) Global technology/security constraints
+4) Non-critical warnings
+
+This ensures the same plan + task always yields the same digest, keeping prompts reproducible while preventing context-window overflow.
+
+#### Planner Output Validation Gate (Structural + Quality)
+
+Beyond schema checks, the planner output must pass a lightweight quality gate before it is accepted.
+
+```typescript
+interface PlanQualityScore {
+  cohesion: number;            // 0-100, higher is better
+  dependencySanity: number;    // 0-100, penalize cycles/excess fan-in/out
+  stackConsistency: number;    // 0-100, stack aligns with constraints/decisions
+  overall: number;             // weighted: 0.4 cohesion + 0.35 dependency + 0.25 stack
+  status: 'pass' | 'review' | 'fail';
+  findings: string[];
+}
+```
+
+Acceptance policy:
+- `overall >= 75` and no hard validation failures → accept automatically
+- `60 <= overall < 75` → continue with warning + require human review note before execution
+- `< 60` or failed deterministic checks → reject and re-run planner pass
+
+Scoring source:
+- Prefer deterministic metrics (module responsibility overlap, dependency graph fan-in/fan-out, stack token match)
+- Optional secondary LLM verifier may add findings, but cannot override deterministic failure states
+
 #### Integration
 
 1. `SprintOrchestrator.run(stories[])` runs per-story BizOwner + PO first
@@ -689,6 +777,35 @@ function validateNoFileCollisions(group: TaskGroup, tasks: ImplementationTask[])
   }
 }
 ```
+
+#### Module Ownership & Coordination Semantics
+
+File ownership prevents write collisions, but module cohesion also requires coordination above the file level.
+
+Rules:
+- A module may be modified by multiple tasks **across different task groups/schedules**.
+- Within the same parallel `TaskGroup`, only one task may hold a module write lock for a given module.
+- Cross-group edits to the same module are allowed only when dependency order is explicit (`dependsOn`).
+
+```typescript
+interface ModuleLock {
+  module: string;
+  ownerTaskId: string;
+  groupId: number;
+  acquiredAt: string;
+  releasedAt?: string;
+}
+```
+
+Deterministic coordination policy:
+1. Before a task starts, acquire locks for its target modules.
+2. If lock exists in the same group, the task is rescheduled to a later group.
+3. If lock exists from an earlier group, task waits on that dependency edge.
+4. When multiple locks are required, acquire in lexicographic `module` order to avoid deadlocks.
+5. Lock acquisition timeout defaults to 60s; timeout emits a retryable orchestration failure.
+6. Locks are released only after enforcer + sandbox pass for that task.
+
+This keeps parallel execution safe without over-serializing the entire sprint.
 
 #### Integration Tasks
 
@@ -913,6 +1030,30 @@ Every trigger is classified to one of two levels:
 - `sprint` (default) — localized implementation/task misalignment; handled automatically (up to 1 revision, then human approval)
 - `global` — cross-cutting stack or boundary changes; human-gated by default
 
+Deterministic classification policy:
+
+```typescript
+interface RevisionClassificationPolicy {
+  globalEscalationRules: Array<
+    | 'tech-stack-change'        // language/runtime/framework/database/test/build tool changed
+    | 'service-topology-change'  // service/module topology added/removed/split/merged
+    | 'module-boundary-change'   // ownership/dependency boundary definitions changed
+  >;
+  sprintRules: Array<
+    | 'missing-interface'
+    | 'module-capability-gap'
+    | 'task-dependency-mistake'
+    | 'localized-sandbox-constraint'
+  >;
+}
+```
+
+Classification algorithm:
+1. Parse trigger evidence into normalized change facts.
+2. If any `globalEscalationRules` match → classify `global`.
+3. Else if only `sprintRules` match → classify `sprint`.
+4. If mixed signals, prefer `global` (safer default).
+
 **Weak signals (require corroboration):**
 
 1. **Developer retry exhaustion**: If the Developer agent fails the same `ImplementationTask` after all retries (default 3), this *may* indicate incorrect or incomplete architectural constraints — or it may indicate a flaky test, a prompt issue, or a skill gap in the generated code. To trigger a revision, the orchestrator must verify that the failure is *structural* — at least one of: (a) the enforcer blocked the code in every retry, (b) the same compiler error references a missing module/interface, or (c) the sandbox consistently fails with the same architectural symptom (e.g., missing dependency, circular import). If the failure appears non-structural (e.g., logic bug, test flake), the task is marked `BLOCKED` and escalated to human review without triggering a revision.
@@ -926,6 +1067,45 @@ Every trigger is classified to one of two levels:
 4. **Plan-reality drift**: If the actual import graph or module boundaries (measured by the `ArchitectureEnforcer`'s compliance metrics) diverge materially from the plan — e.g., drift score exceeds a configurable threshold — the orchestrator triggers a revision to realign the plan with the codebase state. This catches gradual drift that accumulates across many tasks without any single task failing.
 
 5. **Persistent sandbox constraint**: If sandbox execution repeatedly hits resource limits (CPU, memory, runtime) on the same task despite Developer revisions, this may indicate an architectural issue requiring a different approach (e.g., split workload, streaming, async processing). Requires 2+ distinct sandbox resource-limit failures on the same task.
+
+#### Objective Drift Score (for `plan-reality-drift`)
+
+`plan-reality-drift` is evaluated by a deterministic score computed from architecture deltas.
+
+```typescript
+interface DriftWeights {
+  importGraphViolations: number;     // default: 0.40
+  boundaryViolations: number;        // default: 0.35
+  dependencyMismatches: number;      // default: 0.25
+}
+
+interface DriftMeasurement {
+  planId: string;
+  score: number;                     // 0-100
+  threshold: number;                 // default trigger threshold: 25
+  exceeded: boolean;
+  importGraphViolations: number;
+  boundaryViolations: number;
+  dependencyMismatches: number;
+}
+```
+
+Formula (normalized to 0-100):
+
+`score = 100 * (0.40 * IG + 0.35 * BV + 0.25 * DM)`
+
+Where:
+- `IG` = normalized import-graph violation ratio (`actual illegal imports / total imports`, capped at 1)
+- `BV` = normalized boundary violation ratio (`boundary violations / checked boundaries`, capped at 1)
+- `DM` = normalized dependency mismatch ratio (`unexpected/missing dependencies / declared dependencies`, capped at 1)
+
+Trigger policy:
+- If `score >= threshold` on two consecutive measurements within the same sprint → emit `plan-reality-drift`
+- If `score >= threshold` once and includes a critical boundary violation, emit immediately
+
+Operational behavior:
+- `score < threshold`: continue execution and record telemetry only
+- `score >= threshold`: classify revision level using `RevisionClassificationPolicy` before emitting trigger
 
 #### Evidence Packaging
 
@@ -1027,6 +1207,21 @@ interface PlannedSprintState {
   maxRevisions: number;                  // default: 1 (human approval required after first revision)
   storyRevisionCounts: Map<string, number>;  // per-story revision counts
   maxRevisionsPerStory: number;          // default: 1
+  checkpoint?: SprintCheckpoint;         // latest persisted checkpoint for crash-safe resume
+}
+
+interface SprintCheckpoint {
+  checkpointId: string;
+  sprintId: string;
+  runId: string;
+  activeSprintPlanId: string;
+  activeGlobalPlanId: string;
+  revisionCount: number;
+  completedTaskIds: string[];
+  blockedTaskIds: string[];
+  remainingTaskSchedule: TaskSchedule;
+  lastCompletedGroupId?: number;
+  createdAt: string;
 }
 
 // Pseudocode for revision check:
@@ -1048,6 +1243,11 @@ interface PlannedSprintState {
 //   state.revisionCount++;
 //   presentRevisionSummaryToUser(revisedPlan); // show diff to user, allow abort
 // }
+
+// Checkpointing policy:
+// - Persist checkpoint after each task group completion and after each revision.
+// - On orchestrator restart, load latest checkpoint and resume from remainingTaskSchedule.
+// - Never re-run tasks listed in completedTaskIds unless user explicitly requests replay.
 ```
 
 ---
@@ -1064,9 +1264,16 @@ interface PlannedSprintState {
 | **Circular module dependencies** | Planner must output acyclic dependency graph. Deterministic validation rejects cycles. |
 | **Integration gaps** | Dedicated `IntegrationTask` type for system wiring (bootstrap, routing, DI). These run after module tasks. |
 | **Context overflow with large sprint batches** | Pass A compresses each story. If still too large, split into sub-batches by execution group and merge plans. |
+| **Planner accepts low-quality decomposition** | Add quality gate (`PlanQualityScore`) after deterministic validation. Plans below threshold are rejected or human-reviewed before execution. |
+| **Task context overflow from large plans** | Deterministic `PlanDigest` with fixed max serialized size and priority trimming ensures bounded context per task. |
+| **Module-level race conditions despite file ownership** | Module write locks (`ModuleLock`) prevent concurrent writes to the same module within a task group. |
 | **Revision loop runaway** | 1 auto-revision per sprint/story, then human approval required. Global revisions always require human approval. Hard cap prevents silent architecture degradation. |
 | **Weak revision triggers (false positives)** | Developer retry exhaustion and enforcement blocks are weak signals — require corroborating evidence. Only capability gaps, drift, and sandbox constraints trigger directly. |
+| **Ambiguous revision-level selection** | Deterministic classification policy escalates to global for stack/topology/boundary changes; defaults to sprint for localized interface/capability/dependency issues. |
 | **Revision degrades architecture** | Revision fixes the *plan*, not rubber-stamps the Developer's output. Planner adjusts boundaries or adds modules — never removes constraints wholesale. |
+| **Non-objective drift trigger behavior** | Drift trigger uses explicit score formula and threshold with consecutive-breach policy for reproducible behavior. |
+| **Local/CI environment mismatch** | Digest-pinned sandbox image lockfile shared across local and CI; unpinned images rejected in planned-sprint mode. |
+| **Orchestrator restart loses sprint progress** | Persist `SprintCheckpoint` after each task group and revision; resume from checkpoint without re-running completed tasks. |
 | **Guardrail defaults too restrictive** | All guardrails configurable via `OrchestratorConfig.guardrails`. Document escape hatches clearly. |
 
 ### Subsystem Definition of Done
@@ -1074,17 +1281,23 @@ interface PlannedSprintState {
 - [ ] `ArchitecturePlannerAgent` with three-pass design at two levels (L0 global + L2 sprint)
 - [ ] `ArchitecturePlannerAgent` revision mode (receives trigger + current sprint plan, produces superseding plan)
 - [ ] Deterministic plan validation (schema, acyclicity, coverage)
+- [ ] `PlanQualityScore` gate (cohesion/dependency/stack scoring) enforced before plan acceptance
+- [ ] Deterministic `PlanDigest` generation with fixed context cap for task-scoped agent prompts
 - [ ] `TaskDecomposer` with deterministic first-pass (module map + story AC → tasks) + optional LLM enrichment for descriptions
 - [ ] `IntegrationPhase` model in `SprintTaskPlan` consolidating cross-cutting system wiring tasks
 - [ ] `DecompositionGuardrails` with configurable limits and task merging
 - [ ] File ownership validation (no parallel collisions)
+- [ ] Module ownership coordination with `ModuleLock` semantics for parallel execution safety
 - [ ] `IntegrationTask` type for system wiring
 - [ ] `ArchitectureEnforcer` rules engine (4 hard rules: dependency boundaries, required exports, file ownership, technology compliance)
 - [ ] Enforcer → Developer feedback loop integrated into orchestrator retry logic
 - [ ] `PlanRevisionTrigger` emission from orchestrator (all 5 trigger types) + sprint/global classification
+- [ ] Deterministic revision-level classification policy implemented (global escalation vs sprint-local rules)
+- [ ] Objective drift score measurement and threshold-trigger policy implemented for `plan-reality-drift`
 - [ ] `EvidenceSummary` generation from raw artifact evidence for planner input
 - [ ] Sprint and per-story revision cap (default: 1) with human approval gate after first revision
 - [ ] Global revision always requires human approval
+- [ ] `SprintCheckpoint` persistence + resume behavior integrated into orchestrator
 - [ ] `HandoffDocument` extended with typed artifact references (backward compatible)
 - [ ] `executionMode: 'story' | 'planned-sprint'` flag in `OrchestratorConfig`
 - [ ] Existing tests unaffected; new tests cover all subsystems including revision loop
@@ -1194,6 +1407,7 @@ type ArtifactType =
   | 'sprint-architecture-plan'
   | 'architecture-plan'         // legacy alias for backward compatibility
   | 'sprint-task-plan'
+  | 'sprint-checkpoint'
   | 'enforcement-report'
   | 'sandbox-result'
   | 'architecture-decision'
@@ -1533,18 +1747,21 @@ Extend the basic 5-sprint retention from the infrastructure layer:
 1. Two-level `ArchitecturePlan` schema (`level: 'global' | 'sprint'`, `parentPlanId`, `scopeKey`) + Zod validation + persistence
 2. `ArchitecturePlannerAgent` L0 Global pass set (fact extraction, synthesis, constraints)
 3. `ArchitecturePlannerAgent` L2 Sprint pass set (execution-facing plan derived from global)
-4. Deterministic plan validation (acyclicity, coverage, schema)
-5. `SprintTaskPlan` schema + deterministic `TaskDecomposer` first-pass (module map → tasks) + optional LLM enrichment
-6. `DecompositionGuardrails` (limits, task merging, human escalation)
-7. File ownership validation + `IntegrationTask` type
-8. `ArchitectureEnforcer` rules engine (4 hard rules: dependency boundaries, required exports, file ownership, tech compliance)
-9. Telemetry collection hooks in enforcer (violation counts, compliance metrics)
-10. Enforcer → Developer feedback loop in orchestrator
-11. `PlanRevisionTrigger` schema + trigger detection logic + sprint/global classification
-12. `ArchitecturePlannerAgent` revision mode + evidence packaging
-13. Revision loop integration in orchestrator (sprint cap=1, human approval gate, re-decomposition)
-14. `executionMode` flag + `HandoffDocument` schema extension
-15. Orchestrator integration (`planned-sprint` mode end-to-end)
+4. Deterministic plan validation (acyclicity, coverage, schema) + `PlanQualityScore` acceptance gate
+5. Deterministic `PlanDigest` generation + fixed context cap enforcement for task prompts
+6. `SprintTaskPlan` schema + deterministic `TaskDecomposer` first-pass (module map → tasks) + optional LLM enrichment
+7. `DecompositionGuardrails` (limits, task merging, human escalation)
+8. File ownership validation + module ownership coordination (`ModuleLock`) + `IntegrationTask` type
+9. `ArchitectureEnforcer` rules engine (4 hard rules: dependency boundaries, required exports, file ownership, tech compliance)
+10. Telemetry collection hooks in enforcer (violation counts, compliance metrics)
+11. Enforcer → Developer feedback loop in orchestrator
+12. `PlanRevisionTrigger` schema + trigger detection logic + deterministic sprint/global classification
+13. Objective drift score measurement + threshold policy for `plan-reality-drift`
+14. `ArchitecturePlannerAgent` revision mode + evidence packaging
+15. Revision loop integration in orchestrator (sprint cap=1, human approval gate, re-decomposition)
+16. `SprintCheckpoint` persistence/resume support in orchestrator
+17. `executionMode` flag + `HandoffDocument` schema extension
+18. Orchestrator integration (`planned-sprint` mode end-to-end)
 
 ### Phase 2 (recommended order)
 1. `ProjectWorkspace` shared layer + file promotion on story completion
