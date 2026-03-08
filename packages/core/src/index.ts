@@ -14,3 +14,8 @@ export * from './plan-validation';
 export * from './task-decomposition';
 export * from './architecture-enforcer';
 export * from './sprint-state';
+export * from './story-dependencies';
+export * from './project-memory';
+export * from './import-graph';
+export * from './project-context';
+export * from './retrieval-tracking';
