@@ -1821,3 +1821,123 @@ These are explicitly deferred and should be revisited after Phase 3:
 - [SWE-agent](https://github.com/SWE-agent/SWE-agent) — tool-augmented coding agent
 - [Firecracker microVMs](https://github.com/firecracker-microvm/firecracker) — lightweight VM alternative to Docker (future consideration)
 - ["Comparing AI Coding Agents" (2025)](https://arxiv.org/pdf/2602.08915) — empirical study of agent architectures
+
+---
+
+## Addendum: Gap Analysis & Resolution (Wave 1)
+
+This section documents seven implementation gaps discovered after the initial build of the Foundational Subsystems and Infrastructure phases. Each gap represents a discrepancy between what the ROADMAP specified and what was actually wired in the runtime. All seven have been resolved.
+
+---
+
+### Gap 1 — Architecture Enforcer Not a Mandatory Blocking Gate
+
+**ROADMAP intent** (Subsystem 3, "Feedback Loop"): When the enforcement fix loop exhausts all attempts, the task must hard-block. The sandbox must never run for a task with unresolved architectural violations, and the orchestrator must short-circuit before QA.
+
+**What was missing**: The Developer agent completed the fix loop and set `enforcementReport` in the handoff, but the orchestrator did not inspect this signal before dispatching the QA agent. Tasks with exhausted fix loops proceeded into sandbox execution and QA as if enforcement had passed.
+
+**Resolution**:
+- `developer.ts`: When the enforcement fix loop exhausts all retry attempts, the Developer returns early with `enforcementBlocked: 'true'` in `stateOfWorld` and skips sandbox execution entirely (0 sandbox calls).
+- `orchestrator.ts`: Before dispatching the QA agent, the orchestrator checks `handoff.stateOfWorld['enforcementBlocked'] === 'true'`. If set, it short-circuits with a `BLOCKED` verdict and does not run QA.
+
+**Affected files**: `packages/agents/src/developer.ts`, `packages/agents/src/orchestrator.ts`, `packages/agents/src/developer.test.ts`
+
+---
+
+### Gap 2 — Revision Loop Never Auto-Triggered
+
+**ROADMAP intent** (Subsystem 4, "Trigger Sources"): The `architecture-violation` trigger source — "Enforcer repeatedly blocks code that satisfies task requirements" — must fire automatically when enforcement reports accumulate across tasks in a sprint group.
+
+**What was missing**: The orchestrator recorded `enforcementBlocked` per-task in handoff metadata but never accumulated enforcement reports across tasks. `detectRepeatedEnforcementViolations` was never called during sprint execution. The revision loop could only be triggered manually.
+
+**Resolution**:
+- `sprint-state.ts`: Added `enforcementReports: z.array(EnforcementReportSchema).default([])` to `PlannedSprintStateSchema` so reports persist across checkpoint saves.
+- `orchestrator.ts`: After each enforcement-blocked task, the `EnforcementReport` is parsed from the handoff and pushed to a `sprintEnforcementReports` accumulator. After each task group checkpoint, `detectRepeatedEnforcementViolations` is called. If it returns a trigger, `handleRevisionLoop` is called immediately with the accumulated evidence bundle.
+
+**Affected files**: `packages/core/src/sprint-state.ts`, `packages/agents/src/orchestrator.ts`, `packages/core/src/sprint-state.test.ts`
+
+---
+
+### Gap 3 — Task Context Not Injected into Developer Prompt
+
+**ROADMAP intent** (Subsystem 2, "How the Developer Agent Changes"): The Developer agent must receive full task context in its LLM prompt — task ID, module, type, description, target files, expected outputs, acceptance criteria, and upstream artifact inputs from dependent tasks.
+
+**What was missing**: `HandoffDocument.task` was populated by the orchestrator with only `taskId`, `module`, and `type`. The Developer prompt builder ignored the task ref entirely — the LLM received only the story title, acceptance criteria, and ADR content. Task-specific context (description, owned files, expected outputs, upstream inputs) was never surfaced to the model.
+
+**Resolution**:
+- `architecture-plan.ts`: `ImplementationTaskRefSchema` extended with optional fields: `description`, `targetFiles`, `inputs`, `expectedOutputs`, `acceptanceCriteria`.
+- `orchestrator.ts`: Handoff task ref construction now populates all five optional fields from the `ImplementationTask`.
+- `developer.ts`: Prompt builder constructs a `taskContextSection` (task ID, module, type, description, target files, expected outputs, task acceptance criteria, upstream inputs) and a `relevantFilesSection` (existing project files with path headers), both injected into the user message.
+
+**Affected files**: `packages/core/src/architecture-plan.ts`, `packages/agents/src/orchestrator.ts`, `packages/agents/src/developer.ts`, `packages/agents/src/developer.test.ts`
+
+---
+
+### Gap 4 — Telemetry Metric Blocks Missing
+
+**ROADMAP intent** (Infrastructure: Observability & Telemetry, "RunTelemetry Schema"): The `RunTelemetry` schema requires three structured sub-blocks: `ArchitectureMetrics` (plan violations by category), `ExecutionMetrics` (task counts, retry counts, revision counts), and `AggregateSandboxTelemetry` (rollup sandbox stats). These must be populated from live orchestrator data and included in the sprint telemetry artifact.
+
+**What was missing**: `SprintTelemetry` existed but lacked the three sub-schemas. Violation counts, task completion stats, and sandbox aggregates were computed inline during the sprint but never written into the telemetry artifact in a structured form. The `export` command could not surface per-category enforcement metrics or execution-level diagnostics.
+
+**Resolution**:
+- `types.ts`: Added `ArchitectureMetricsSchema`, `ExecutionMetricsSchema`, and `AggregateSandboxTelemetrySchema` with all fields specified in the ROADMAP. Extended `StoryMetricsSchema` and `SprintTelemetrySchema` to include these blocks.
+- `orchestrator.ts`: Wired live data from enforcement reports, task result tracking, and sandbox run counters into the three metric blocks at sprint completion.
+- `index.ts`: Exported all three schemas and their inferred types.
+
+**Affected files**: `packages/core/src/types.ts`, `packages/core/src/index.ts`, `packages/agents/src/orchestrator.ts`
+
+---
+
+### Gap 5 — ProjectMemory Query API Missing
+
+**ROADMAP intent** (Phase 2.3, "Project Memory"): The `ProjectMemoryManager` must support structured artifact retrieval — by type, by sprint, and via supersession chain — so agents can look up prior architectural decisions and understand artifact lineage across sprints.
+
+**What was missing**: `ProjectMemoryManager` had only `initialize`, `load`, and `upsertArtifact`. There was no way to query artifacts by type (e.g., find all `global-architecture-plan` artifacts), by sprint, or to walk the supersession chain from a given artifact ID. The global architecture plan produced during planning was also never indexed into project memory.
+
+**Resolution**:
+- `project-memory.ts`: Added three query methods:
+  - `getArtifactsByType(projectId, type)` — returns all artifacts matching a given type string
+  - `getArtifactsBySprintId(projectId, sprintId)` — returns all artifacts tagged to a sprint
+  - `getSupersessionChain(projectId, artifactId)` — walks `supersedes` links to return the full lineage chain from the oldest ancestor to the given artifact
+- `orchestrator.ts`: After planning completes, the global architecture plan is indexed as a `global-architecture-plan` artifact in project memory.
+
+**Affected files**: `packages/core/src/project-memory.ts`, `packages/agents/src/orchestrator.ts`, `packages/core/src/project-memory.manager.test.ts`
+
+---
+
+### Gap 6 — Retrieval Escalation Not Implemented
+
+**ROADMAP intent** (Phase 2.6, "Retrieval Failure Signal & Escalation"): File selection must prioritise task-relevant files via import-graph expansion rather than an arbitrary flat scan. `RetrievalTracker` must detect when the project-level retrieval failure rate exceeds a configurable threshold and surface a structured escalation recommendation.
+
+**What was missing**: `ProjectContextBuilder.build()` used a flat scan of up to 20 project files with no prioritisation — target files were not seeded first, and the import graph was never consulted. `RetrievalTracker` computed per-story `missedFiles` but had no project-level aggregation and no `detectContextGap()` method. The threshold check and escalation recommendation specified in the ROADMAP were unimplemented.
+
+**Resolution**:
+- `project-context.ts`: `ProjectContextBuilder` constructor now instantiates `ImportGraphBuilder`. `build()` accepts an optional `targetFiles: string[]` parameter. When provided, target files are added to a priority set and expanded transitively via `ImportGraphBuilder.getTransitiveDependencies()`. Priority files are loaded first; remaining cap is filled by the flat scan, skipping already-loaded files.
+- `retrieval-tracking.ts`: Added `EscalationRecommendationSchema`, `EscalationRecommendation` type, `RETRIEVAL_FAILURE_THRESHOLD_DEFAULT` (0.15), and `detectContextGap(projectId, threshold?)` to `RetrievalTracker`. The method computes per-project failure rate (attempts with any missed files / total attempts), returns `null` when below threshold, and returns a structured `EscalationRecommendation` with `failureRate`, `totalAttempts`, `missedFileFrequency` (sorted descending), and the ROADMAP-specified console message when above threshold.
+- `orchestrator.ts`: Both `contextBuilder.build()` call sites now pass `task.targetFiles ?? []`. Post-sprint loop calls `detectContextGap` and emits the escalation message if triggered.
+
+**Affected files**: `packages/core/src/retrieval-tracking.ts`, `packages/core/src/project-context.ts`, `packages/agents/src/orchestrator.ts`, `packages/core/src/retrieval-tracking.test.ts`, `packages/core/src/project-context.test.ts`
+
+---
+
+### Gap 7 — Checkpoint runId Drift
+
+**ROADMAP intent** (Infrastructure: Observability & Telemetry): `runId` must be stable — generated once at sprint start and propagated unchanged through all checkpoint saves and the final telemetry artifact.
+
+**What was missing**: `PlannedSprintState.runId` was generated fresh on every checkpoint write, causing each checkpoint to have a different `runId`. Telemetry correlation across a multi-task sprint was broken — each checkpoint appeared to be a distinct run.
+
+**Resolution**:
+- `sprint-state.ts`: `runId` is now generated once in the initial `PlannedSprintState` creation and defaults to the existing value on subsequent `parse()` calls via `z.string().default(...)` using a stable generator.
+- `orchestrator.ts`: All checkpoint save paths now carry forward the `runId` from the initial state rather than regenerating it.
+
+**Affected files**: `packages/core/src/sprint-state.ts`, `packages/agents/src/orchestrator.ts`, `packages/agents/src/orchestrator.test.ts`
+
+---
+
+### Test Coverage After Wave 1
+
+| Baseline | After Wave 1 |
+|---|---|
+| 720 pass, 0 fail | 745 pass, 0 fail |
+
+New tests added: +25 across 4 test files (`developer.test.ts` +5, `project-memory.manager.test.ts` +10, `retrieval-tracking.test.ts` +6, `project-context.test.ts` +4).

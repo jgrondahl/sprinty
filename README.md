@@ -391,19 +391,40 @@ Automated generation of operational assets:
 ### Multi-Container Integration Sandbox
 Execute tests across multiple services using `DockerComposeIntegrationSandbox`. It handles orchestration, health checks, and cleanup automatically.
 
+### Architecture Enforcement Gate
+The `ArchitectureEnforcer` runs after every Developer task and validates four hard rules: file ownership boundaries, import boundaries, required interface exports, and disallowed cross-module dependencies. If enforcement fails, the Developer enters a fix loop (up to 3 attempts). If all attempts are exhausted, the task is hard-blocked — the sandbox is never run and the orchestrator short-circuits that task with an `enforcementBlocked` signal rather than proceeding to QA with known architectural violations.
+
+### Revision Loop
+When repeated enforcement failures occur across tasks in a sprint group, the orchestrator automatically triggers a plan revision. It packages all `EnforcementReport` evidence, computes a drift score, and calls the `ArchitecturePlannerAgent` to produce a revised plan. The revised plan is then used for remaining tasks in the sprint. No manual intervention is required unless the drift score exceeds the human-gate threshold.
+
+### Developer Task Context
+The Developer agent receives rich task context in its LLM prompt: task ID, module, type, description, target files, expected outputs, acceptance criteria, and upstream artifact inputs from dependent tasks. When `ProjectContext` is available, the prompt also includes the content of relevant project files selected by import-graph expansion from the task's target files.
+
+### Retrieval Escalation
+`ProjectContextBuilder` prioritises files by seeding from a task's `targetFiles` and expanding transitively through the project's import graph before falling back to a flat file scan. After each sprint, `RetrievalTracker.detectContextGap()` computes the project-level retrieval failure rate. If it exceeds the configurable threshold (default 15%), a structured escalation recommendation is emitted to the console with the top missed files and instructions for enabling hybrid retrieval mode.
+
 ### Observability & Telemetry
-Track performance with `StoryMetrics` including duration, token usage, and cost estimates. Sprints generate detailed telemetry artifacts.
+Track performance with structured metric schemas: `StoryMetrics` (per-story duration, token usage, cost), `ArchitectureMetrics` (planning and enforcement counters), `ExecutionMetrics` (sandbox runs, test results), and `AggregateSandboxTelemetry` (rollup across the full sprint). Sprints generate detailed telemetry artifacts.
 
 ```typescript
 // Default retention: 5 sprints, no auto-archive
 const retention: RetentionConfig = { maxSprints: 5, archiveExpired: false };
 ```
 
+### Project Memory Query API
+`ProjectMemoryManager` exposes query methods for artifact lineage tracking: `getArtifactsByType(projectId, type)`, `getArtifactsBySprintId(projectId, sprintId)`, and `getSupersessionChain(projectId, artifactId)`. The global architecture plan is indexed into project memory after planning so all subsequent agents can look up prior architectural decisions by artifact type and sprint.
+
 ---
 
 ## Architecture
 
-Splinty uses a **planned-sprint execution model**. Unlike simple story-by-story processing, the `ArchitecturePlannerAgent` creates a global technical vision and detailed sprint plans before implementation begins. This ensures that individual stories align with the overall project structure. The `ArchitectureEnforcer` module applies deterministic rules (dependency boundaries, file ownership) to prevent architectural drift without relying on LLM calls for every check.
+Splinty uses a **planned-sprint execution model**. Unlike simple story-by-story processing, the `ArchitecturePlannerAgent` creates a global technical vision and detailed sprint plans before implementation begins. This ensures that individual stories align with the overall project structure.
+
+Stories are decomposed into granular capability-scoped implementation tasks. Each task carries its own module ownership, target files, expected outputs, and acceptance criteria — all injected directly into the Developer agent's prompt.
+
+The `ArchitectureEnforcer` module applies deterministic rules (dependency boundaries, file ownership, required exports) to every Developer output. Violations trigger a fix loop; exhausted fix attempts hard-block the task and prevent sandbox execution. Repeated violations across a sprint group automatically trigger a plan revision loop that repackages enforcement evidence and re-plans before continuing.
+
+`ProjectContextBuilder` selects relevant project files using the task's target files as seed points, expanding transitively through the import graph, so the Developer always receives the most contextually relevant existing code. `RetrievalTracker` monitors retrieval quality and surfaces escalation recommendations when the project-level failure rate exceeds threshold.
 
 ---
 
