@@ -4,10 +4,14 @@ import * as path from 'path';
 import * as os from 'os';
 import { SprintOrchestrator } from './orchestrator';
 import {
+  AgentPersona,
+  ResumeManager,
   StoryState,
   StorySource,
+  WorkspaceManager,
   MockSandbox,
   makeSuccessResult,
+  type ResumePoint,
   type Story,
   type LlmClient,
 } from '@splinty/core';
@@ -498,5 +502,105 @@ describe('SprintOrchestrator — sandbox pipeline', () => {
     const initCall = sandbox.calls.find((c) => c.method === 'init');
     expect(initCall).toBeDefined();
     expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
+  });
+});
+
+// ─── Resume points ─────────────────────────────────────────────────────────────
+
+describe('SprintOrchestrator — resume points', () => {
+  it('persists a resume point after major steps before a crash', async () => {
+    let idx = 0;
+    const queue = [bizResp, poResp, archResp, devResp, qaPassResp];
+    const client: LlmClient = {
+      complete: async () => {
+        if (idx >= queue.length) {
+          throw new Error('Simulated crash after QA pass');
+        }
+        const resp = queue[idx] ?? queue[queue.length - 1]!;
+        idx++;
+        return JSON.stringify(resp);
+      },
+    };
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(1);
+
+    const workspaceMgr = new WorkspaceManager(tmpDir);
+    const ws = workspaceMgr.createWorkspace('test-proj', 'story-orch');
+    const resumeMgr = new ResumeManager(workspaceMgr);
+    expect(resumeMgr.exists(ws)).toBe(true);
+
+    const resume = resumeMgr.load(ws);
+    expect(resume).toBeTruthy();
+    expect(resume!.pipelineStep).toBe(6);
+    expect(resume!.lastCompletedAgent).toBe(AgentPersona.QA_ENGINEER);
+  });
+
+  it('clears resume point on successful pipeline completion', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+
+    const workspaceMgr = new WorkspaceManager(tmpDir);
+    const ws = workspaceMgr.createWorkspace('test-proj', 'story-orch');
+    const resumeMgr = new ResumeManager(workspaceMgr);
+    expect(resumeMgr.exists(ws)).toBe(false);
+  });
+
+  it('resumes from saved point and skips completed early steps', async () => {
+    const workspaceMgr = new WorkspaceManager(tmpDir);
+    const ws = workspaceMgr.createWorkspace('test-proj', 'story-orch');
+    const resumeMgr = new ResumeManager(workspaceMgr);
+
+    const snapshot = makeRawStory({ state: StoryState.IN_PROGRESS });
+    const resumePoint: ResumePoint = {
+      storyId: snapshot.id,
+      projectId: 'test-proj',
+      lastCompletedAgent: AgentPersona.ARCHITECT,
+      handoffId: `${snapshot.id}-ARCHITECT-seeded`,
+      handoff: {
+        fromAgent: AgentPersona.ARCHITECT,
+        toAgent: AgentPersona.DEVELOPER,
+        storyId: snapshot.id,
+        status: 'OK',
+        stateOfWorld: { soundEngineerRequired: 'false' },
+        nextGoal: 'Implement the architecture',
+        artifacts: [],
+        timestamp: new Date().toISOString(),
+      },
+      storySnapshot: snapshot,
+      timestamp: new Date().toISOString(),
+      pipelineStep: 3,
+    };
+    resumeMgr.save(ws, resumePoint);
+
+    const callLog = { calls: 0 };
+    const client = makeQueuedClient([devResp, qaPassResp, readmeResp], callLog);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+    expect(callLog.calls).toBe(3);
   });
 });

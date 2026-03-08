@@ -3,6 +3,7 @@ import {
   StoryState,
   LedgerManager,
   HandoffManager,
+  ResumeManager,
   WorkspaceManager,
   StoryStateMachine,
   type LlmClient,
@@ -10,6 +11,7 @@ import {
   type HandoffDocument,
   type AppBuilderResult,
   type AgentConfig,
+  type ResumePoint,
   type SandboxEnvironment,
   type SandboxConfig,
 } from '@splinty/core';
@@ -84,6 +86,18 @@ function makeConfig(persona: AgentPersona, model: string): AgentConfig {
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 const DEFAULT_LIGHT_MODEL = 'claude-3-haiku-20240307';
 
+const PIPELINE_STEPS: Record<string, number> = {
+  BUSINESS_OWNER: 0,
+  PRODUCT_OWNER: 1,
+  ORCHESTRATOR_TRANSITIONS: 2,
+  ARCHITECT: 3,
+  SOUND_ENGINEER: 4,
+  DEVELOPER: 5,
+  QA_LOOP: 6,
+  TECHNICAL_WRITER: 7,
+  PR_OPEN: 8,
+};
+
 function buildAgentConfigs(
   model: string = DEFAULT_MODEL,
   lightModel: string = DEFAULT_LIGHT_MODEL,
@@ -107,6 +121,7 @@ export class SprintOrchestrator {
   private readonly ledger: LedgerManager;
   private readonly handoffMgr: HandoffManager;
   private readonly workspaceMgr: WorkspaceManager;
+  private readonly resumeMgr: ResumeManager;
   private readonly stateMachine: StoryStateMachine;
 
   constructor(config: OrchestratorConfig) {
@@ -114,6 +129,7 @@ export class SprintOrchestrator {
     this.ledger = new LedgerManager(config.workspaceBaseDir);
     this.handoffMgr = new HandoffManager();
     this.workspaceMgr = new WorkspaceManager(config.workspaceBaseDir ?? '.splinty');
+    this.resumeMgr = new ResumeManager(this.workspaceMgr);
     this.stateMachine = new StoryStateMachine();
   }
 
@@ -155,6 +171,17 @@ export class SprintOrchestrator {
 
     // Register story in ledger
     this.ledger.upsertStory(this.config.projectId, story);
+
+    let currentStory = story;
+    let handoff: HandoffDocument | null = null;
+    let startStep = 0;
+
+    const resume = this.resumeMgr.load(ws);
+    if (resume && resume.storyId === story.id && resume.projectId === this.config.projectId) {
+      currentStory = resume.storySnapshot;
+      handoff = resume.handoff;
+      startStep = resume.pipelineStep + 1;
+    }
 
     const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
 
@@ -221,86 +248,122 @@ export class SprintOrchestrator {
 
     // ── Pipeline execution ─────────────────────────────────────────────────
 
-    let currentStory = story;
-    let handoff: HandoffDocument | null = null;
-
     // Step 1: RAW → EPIC (BusinessOwner)
-    handoff = await biz.execute(handoff, currentStory);
-    currentStory = this.reloadStory(ws, story.id, currentStory);
-    this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
+    if (startStep <= PIPELINE_STEPS['BUSINESS_OWNER']!) {
+      handoff = await biz.execute(handoff, currentStory);
+      currentStory = this.reloadStory(ws, story.id, currentStory);
+      this.updateLedger(currentStory, AgentPersona.BUSINESS_OWNER);
+      this.saveResumePoint(ws, currentStory, AgentPersona.BUSINESS_OWNER, handoff, PIPELINE_STEPS['BUSINESS_OWNER']!);
+    }
 
     // Step 2: EPIC → USER_STORY (ProductOwner)
-    handoff = await po.execute(handoff, currentStory);
-    currentStory = this.reloadStory(ws, story.id, currentStory);
-    this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
+    if (startStep <= PIPELINE_STEPS['PRODUCT_OWNER']!) {
+      handoff = await po.execute(handoff, currentStory);
+      currentStory = this.reloadStory(ws, story.id, currentStory);
+      this.updateLedger(currentStory, AgentPersona.PRODUCT_OWNER);
+      this.saveResumePoint(ws, currentStory, AgentPersona.PRODUCT_OWNER, handoff, PIPELINE_STEPS['PRODUCT_OWNER']!);
+    }
 
     // Step 3: USER_STORY → REFINED → SPRINT_READY (Orchestrator transitions)
-    currentStory = this.stateMachine.transition(currentStory, StoryState.REFINED);
-    this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
-    currentStory = this.stateMachine.transition(currentStory, StoryState.SPRINT_READY);
-    this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
-    this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
+    if (startStep <= PIPELINE_STEPS['ORCHESTRATOR_TRANSITIONS']!) {
+      currentStory = this.stateMachine.transition(currentStory, StoryState.REFINED);
+      this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+      currentStory = this.stateMachine.transition(currentStory, StoryState.SPRINT_READY);
+      this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+      this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
+      if (handoff) {
+        this.saveResumePoint(
+          ws,
+          currentStory,
+          AgentPersona.ORCHESTRATOR,
+          handoff,
+          PIPELINE_STEPS['ORCHESTRATOR_TRANSITIONS']!
+        );
+      }
+    }
 
     // Step 4: SPRINT_READY → IN_PROGRESS (Architect)
-    handoff = await architect.execute(handoff, currentStory);
-    currentStory = this.reloadStory(ws, story.id, currentStory);
-    this.updateLedger(currentStory, AgentPersona.ARCHITECT);
+    if (startStep <= PIPELINE_STEPS['ARCHITECT']!) {
+      handoff = await architect.execute(handoff, currentStory);
+      currentStory = this.reloadStory(ws, story.id, currentStory);
+      this.updateLedger(currentStory, AgentPersona.ARCHITECT);
+      this.saveResumePoint(ws, currentStory, AgentPersona.ARCHITECT, handoff, PIPELINE_STEPS['ARCHITECT']!);
+    }
 
     // Step 5 (conditional): Sound Engineer if audio domain
-    if (handoff.stateOfWorld['soundEngineerRequired'] === 'true') {
+    if (startStep <= PIPELINE_STEPS['SOUND_ENGINEER']! && handoff?.stateOfWorld['soundEngineerRequired'] === 'true') {
       handoff = await soundEng.execute(handoff, currentStory);
       this.updateLedger(currentStory, AgentPersona.SOUND_ENGINEER);
+      this.saveResumePoint(ws, currentStory, AgentPersona.SOUND_ENGINEER, handoff, PIPELINE_STEPS['SOUND_ENGINEER']!);
     }
 
     // Step 6: IN_PROGRESS → IN_REVIEW (Developer)
-    handoff = await dev.execute(handoff, currentStory);
-    currentStory = this.reloadStory(ws, story.id, currentStory);
-    this.updateLedger(currentStory, AgentPersona.DEVELOPER);
-
-    // Step 7: QA loop (max 3 attempts to handle rework cycle)
-    let qaAttempts = 0;
-    const maxQaAttempts = 3;
-
-    while (qaAttempts < maxQaAttempts) {
-      qaAttempts++;
-      handoff = await qa.execute(handoff, currentStory);
-      currentStory = this.reloadStory(ws, story.id, currentStory);
-
-      const verdict = handoff.stateOfWorld['verdict'];
-
-      if (verdict === 'PASS') {
-        this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
-        break;
-      }
-
-      if (verdict === 'BLOCKED') {
-        this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
-        throw new Error(`Story ${story.id} QA BLOCKED: ${handoff.stateOfWorld['failedAC'] ?? ''}`);
-      }
-
-      // FAIL — rework: developer gets another pass
-      this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+    if (startStep <= PIPELINE_STEPS['DEVELOPER']!) {
       handoff = await dev.execute(handoff, currentStory);
       currentStory = this.reloadStory(ws, story.id, currentStory);
       this.updateLedger(currentStory, AgentPersona.DEVELOPER);
+      this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, PIPELINE_STEPS['DEVELOPER']!);
+    }
+
+    // Step 7: QA loop (max 3 attempts to handle rework cycle)
+    if (startStep <= PIPELINE_STEPS['QA_LOOP']!) {
+      let qaAttempts = 0;
+      const maxQaAttempts = 3;
+
+      while (qaAttempts < maxQaAttempts) {
+        qaAttempts++;
+        handoff = await qa.execute(handoff, currentStory);
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+
+        const verdict = handoff.stateOfWorld['verdict'];
+
+        if (verdict === 'PASS') {
+          this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+          this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, PIPELINE_STEPS['QA_LOOP']!);
+          break;
+        }
+
+        if (verdict === 'BLOCKED') {
+          this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+          this.saveResumePoint(ws, currentStory, AgentPersona.QA_ENGINEER, handoff, PIPELINE_STEPS['QA_LOOP']!);
+          throw new Error(`Story ${story.id} QA BLOCKED: ${handoff.stateOfWorld['failedAC'] ?? ''}`);
+        }
+
+        // FAIL — rework: developer gets another pass
+        this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+        handoff = await dev.execute(handoff, currentStory);
+        currentStory = this.reloadStory(ws, story.id, currentStory);
+        this.updateLedger(currentStory, AgentPersona.DEVELOPER);
+        this.saveResumePoint(ws, currentStory, AgentPersona.DEVELOPER, handoff, PIPELINE_STEPS['DEVELOPER']!);
+      }
     }
 
     // Step 8: README generation (Technical Writer)
-    handoff = await techWriter.execute(handoff, currentStory);
-    this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
+    if (startStep <= PIPELINE_STEPS['TECHNICAL_WRITER']!) {
+      handoff = await techWriter.execute(handoff, currentStory);
+      this.updateLedger(currentStory, AgentPersona.TECHNICAL_WRITER);
+      this.saveResumePoint(ws, currentStory, AgentPersona.TECHNICAL_WRITER, handoff, PIPELINE_STEPS['TECHNICAL_WRITER']!);
+    }
 
     // Step 9: DONE → PR_OPEN
-    const branchName = handoff.stateOfWorld['branchName'] ?? `story/${story.id}`;
-    const commitSha = handoff.stateOfWorld['commitSha'] ?? '';
+    const branchName = handoff?.stateOfWorld['branchName'] ?? `story/${story.id}`;
+    const commitSha = handoff?.stateOfWorld['commitSha'] ?? '';
 
     let prUrl = '';
     if (this.config.createPullRequest) {
       prUrl = await this.config.createPullRequest(currentStory, branchName, commitSha);
     }
 
-    currentStory = this.stateMachine.transition(currentStory, StoryState.PR_OPEN);
-    this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
-    this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+    if (startStep <= PIPELINE_STEPS['PR_OPEN']!) {
+      currentStory = this.stateMachine.transition(currentStory, StoryState.PR_OPEN);
+      this.workspaceMgr.writeFile(ws, 'story.json', JSON.stringify(currentStory, null, 2));
+      this.updateLedger(currentStory, AgentPersona.ORCHESTRATOR);
+      if (handoff) {
+        this.saveResumePoint(ws, currentStory, AgentPersona.ORCHESTRATOR, handoff, PIPELINE_STEPS['PR_OPEN']!);
+      }
+    }
+
+    this.resumeMgr.clear(ws);
 
     const duration = Date.now() - startTime;
 
@@ -333,6 +396,29 @@ export class SprintOrchestrator {
       this.ledger.updateState(this.config.projectId, story.id, story.state, agent);
     } catch {
       // Non-fatal: ledger update errors should not abort the pipeline
+    }
+  }
+
+  private saveResumePoint(
+    ws: ReturnType<WorkspaceManager['createWorkspace']>,
+    story: Story,
+    lastAgent: AgentPersona,
+    handoff: HandoffDocument,
+    pipelineStep: number,
+  ): void {
+    try {
+      const point: ResumePoint = {
+        storyId: story.id,
+        projectId: this.config.projectId,
+        lastCompletedAgent: lastAgent,
+        handoffId: `${story.id}-${lastAgent}-${Date.now()}`,
+        handoff,
+        storySnapshot: story,
+        timestamp: new Date().toISOString(),
+        pipelineStep,
+      };
+      this.resumeMgr.save(ws, point);
+    } catch {
     }
   }
 
