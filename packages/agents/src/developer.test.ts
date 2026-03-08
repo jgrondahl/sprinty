@@ -9,11 +9,15 @@ import {
   AgentPersona,
   StoryState,
   StorySource,
+  MockSandbox,
+  makeSuccessResult,
+  makeFailResult,
   type AgentConfig,
   type Story,
   type HandoffDocument,
   type WorkspaceState,
   type LlmClient,
+  type SandboxResult,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -243,5 +247,177 @@ describe('DeveloperAgent', () => {
 
     const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
     expect(handoff.toAgent).toBe(AgentPersona.QA_ENGINEER);
+  });
+});
+
+// ─── Sandbox Integration ──────────────────────────────────────────────────────
+
+describe('DeveloperAgent — sandbox integration', () => {
+  it('runs sandbox install→build→test when sandbox is set', async () => {
+    const sandbox = new MockSandbox();
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(3);
+    expect(execCalls[0]!.command).toBe('npm install');
+    expect(execCalls[1]!.command).toBe('npm run build');
+    expect(execCalls[2]!.command).toBe('npm test');
+  });
+
+  it('writes generated files to sandbox before executing commands', async () => {
+    const sandbox = new MockSandbox();
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    const writtenFiles = sandbox.getWrittenFiles();
+    expect(writtenFiles.size).toBe(2);
+    expect(writtenFiles.has('auth/service.ts')).toBe(true);
+    expect(writtenFiles.has('auth/service.test.ts')).toBe(true);
+  });
+
+  it('serializes sandbox results into handoff stateOfWorld', async () => {
+    const installResult = makeSuccessResult('npm install', 'added 100 packages');
+    const buildResult = makeSuccessResult('npm run build', 'compiled');
+    const testResult = makeSuccessResult('npm test', '2 tests passed');
+    const sandbox = new MockSandbox({ executeResults: [installResult, buildResult, testResult] });
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['sandboxInstallResult']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxTestResult']).toBeDefined();
+
+    const parsed = JSON.parse(handoff.stateOfWorld['sandboxTestResult']!) as SandboxResult;
+    expect(parsed.exitCode).toBe(0);
+    expect(parsed.stdout).toBe('2 tests passed');
+  });
+
+  it('stops at install when install fails', async () => {
+    const failInstall = makeFailResult('npm install', 'ERR! missing package.json');
+    const sandbox = new MockSandbox({ executeResults: [failInstall] });
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['sandboxInstallResult']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeUndefined();
+    expect(handoff.stateOfWorld['sandboxTestResult']).toBeUndefined();
+
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(1);
+  });
+
+  it('stops at build when build fails', async () => {
+    const installOk = makeSuccessResult('npm install');
+    const buildFail = makeFailResult('npm run build', 'TSError: type mismatch');
+    const sandbox = new MockSandbox({ executeResults: [installOk, buildFail] });
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['sandboxInstallResult']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxTestResult']).toBeUndefined();
+
+    const parsedBuild = JSON.parse(handoff.stateOfWorld['sandboxBuildResult']!) as SandboxResult;
+    expect(parsedBuild.exitCode).toBe(1);
+  });
+
+  it('does not include sandbox results when no sandbox is set', async () => {
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(handoff.stateOfWorld['sandboxInstallResult']).toBeUndefined();
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeUndefined();
+    expect(handoff.stateOfWorld['sandboxTestResult']).toBeUndefined();
+  });
+
+  it('calls sandbox.cleanup() even when execution throws', async () => {
+    const sandbox = new MockSandbox({ executeError: new Error('exec failed') });
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    expect(sandbox.cleanedUp).toBe(true);
+  });
+
+  it('detects Python stack and uses pip/pytest commands', async () => {
+    const pythonHandoff: HandoffDocument = {
+      ...makeArchitectHandoff(),
+      stateOfWorld: {
+        ...makeArchitectHandoff().stateOfWorld,
+        techStack: 'Python, Flask, pytest',
+      },
+    };
+
+    const sandbox = new MockSandbox();
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+
+    await agent.execute(pythonHandoff, makeInProgressStory());
+
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls[0]!.command).toContain('pip install');
+    expect(execCalls[2]!.command).toBe('pytest');
+  });
+
+  it('initializes sandbox with config when sandboxConfig is provided', async () => {
+    const sandbox = new MockSandbox();
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const sandboxConfig = {
+      image: 'node:20-slim@sha256:abc123',
+      timeoutMs: 30000,
+      memoryLimitMb: 512,
+      cpuLimit: 1,
+      networkEnabled: false,
+      workDir: '/app',
+      maxDiskMb: 500,
+    };
+    agent.setSandbox(sandbox, sandboxConfig);
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    const initCall = sandbox.calls.find((c) => c.method === 'init');
+    expect(initCall).toBeDefined();
+    expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
   });
 });
