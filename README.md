@@ -6,6 +6,7 @@ An AI-powered SCRUM sprint pipeline CLI. Feed Splinty a backlog of stories from 
 
 ## Table of Contents
 
+- [Getting Started: Enterprise Application Walkthrough](#getting-started-enterprise-application-walkthrough)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
@@ -157,6 +158,156 @@ Export sprint telemetry and metrics for analysis.
 ```bash
 splinty export --format=json --sprint=<id>
 ```
+
+---
+
+## Getting Started: Enterprise Application Walkthrough
+
+This section walks through building a real enterprise application end-to-end with Splinty.
+
+### 1. Prerequisites
+
+- **Bun** v1.3+ (`curl -fsSL https://bun.sh/install | bash`)
+- **Docker** (running) — required for sandbox execution
+- An **Anthropic API key** (`sk-ant-...`) or a paid **GitHub Copilot** subscription
+
+### 2. Install
+
+```bash
+git clone <repo-url>
+cd splinty
+bun install
+bun link          # exposes `splinty` as a global command
+```
+
+### 3. Configure
+
+```bash
+cp .env.example .env
+```
+
+Fill in `.env`:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+# Optional: SPLINTY_WORKSPACE_DIR=.splinty
+```
+
+If you prefer GitHub Copilot instead of Anthropic, run the one-time auth flow:
+
+```bash
+splinty auth
+```
+
+### 4. Initialize a Project
+
+```bash
+splinty init --name my-enterprise-app
+```
+
+This creates a workspace and sprint ledger under `.splinty/`.
+
+### 5. Write Your Stories
+
+Create a YAML (or Markdown/JSON) backlog file. Use `dependsOn` to express ordering:
+
+```yaml
+# backlog.yaml
+- id: auth-db-schema
+  title: Auth database schema
+  description: Create users and sessions tables with indexes.
+  acceptanceCriteria:
+    - Schema includes users(id, email, password_hash, created_at)
+    - Schema includes sessions(id, user_id, token, expires_at)
+
+- id: auth-api
+  title: Auth REST API
+  description: Implement /register and /login endpoints using JWT.
+  dependsOn: ["auth-db-schema"]
+  acceptanceCriteria:
+    - POST /register returns 201 with a JWT on success
+    - POST /login returns 200 with a JWT on valid credentials
+
+- id: product-catalog
+  title: Product catalog service
+  description: CRUD API for products with Postgres persistence.
+  acceptanceCriteria:
+    - GET /products returns paginated list
+    - POST /products creates a product
+```
+
+Stories with no `dependsOn` run concurrently. Dependent stories wait automatically.
+
+### 6. Run the Pipeline
+
+```bash
+splinty run --source file --input backlog.yaml --project my-enterprise-app
+```
+
+Each story passes through the full 12-agent pipeline (see [Pipeline Stages](#pipeline-stages)).
+
+### 7. Enterprise Customization (Optional)
+
+**Custom pipeline** — restrict which agents run and configure retries/timeouts:
+
+```typescript
+const pipeline: PipelineConfig = {
+  steps: [
+    { agent: 'ARCHITECT', timeout: 300_000 },
+    { agent: 'DEVELOPER', retries: 2 },
+    { agent: 'QA_ENGINEER' }
+  ]
+};
+```
+
+**Human-in-the-loop gates** — pause for manual approval before critical steps:
+
+```typescript
+const gate: GateConfig = {
+  after: 'ARCHITECT',
+  requireApproval: 'on-cross-service',
+  notifyVia: 'cli-prompt'
+};
+```
+
+**Multi-service support** — manage up to 4 services per project:
+
+```typescript
+const service: ServiceDefinition = {
+  name: 'auth-api',
+  path: './services/auth',
+  guardrails: { maxServicesPerProject: 4 }
+};
+```
+
+**Jira or GitHub Issues as source** instead of a local file:
+
+```bash
+splinty run --source jira --input your-board-id
+splinty run --source github --input owner/repo
+```
+
+### 8. Monitor and Export
+
+```bash
+splinty status --project my-enterprise-app      # live sprint board
+splinty export --format=json --sprint=<id>      # telemetry: token usage, cost, durations
+```
+
+### What Splinty Produces
+
+For each story, the pipeline outputs:
+
+| Artifact | Description |
+|---|---|
+| Source code | Committed to a feature branch via incremental diff patches |
+| SQL migrations | `.up.sql`, `.down.sql`, and optional seed files |
+| Dockerfiles | Per-service container definitions |
+| `docker-compose.yml` | Multi-service local orchestration |
+| GitHub Actions CI | Ready-to-use workflow file |
+| Integration tests | Cross-service test scripts |
+| Documentation | Updated READMEs and technical docs |
+| Sprint telemetry | JSON artifact with cost, duration, and token metrics |
 
 ---
 
