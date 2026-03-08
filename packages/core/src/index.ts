@@ -10,3 +10,4 @@ export * from './diff';
 export * from './resume';
 export * from './architecture-plan';
 export * from './plan-validation';
+export * from './task-decomposition';
