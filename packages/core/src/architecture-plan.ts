@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { PlanRevisionTriggerSchema } from './plan-revision';
 import type { WorkspaceState } from './types';
 import { WorkspaceManager } from './workspace';
 
@@ -100,11 +101,6 @@ export const PlanQualityScoreSchema = z.object({
 
 export type PlanQualityScore = z.infer<typeof PlanQualityScoreSchema>;
 
-// TODO: replaced by full PlanRevisionTrigger in Batch 7
-export const PlanRevisionTriggerSchema = z.any().optional();
-
-export type PlanRevisionTrigger = z.infer<typeof PlanRevisionTriggerSchema>;
-
 export const ArchitecturePlanSchema = z
   .object({
     planId: z.string().min(1),
@@ -119,7 +115,7 @@ export const ArchitecturePlanSchema = z
     status: z.enum(['active', 'stale', 'archived']),
     createdAt: z.string().datetime(),
     revisionNumber: z.number().int().min(0).default(0),
-    revisionTrigger: PlanRevisionTriggerSchema,
+    revisionTrigger: PlanRevisionTriggerSchema.optional(),
 
     techStack: TechStackDecisionSchema,
     modules: z.array(ModuleDefinitionSchema),
@@ -158,6 +154,9 @@ export const ArchitecturePlanSchema = z
   });
 
 export type ArchitecturePlan = z.infer<typeof ArchitecturePlanSchema>;
+
+export { PlanRevisionTriggerSchema } from './plan-revision';
+export type { PlanRevisionTrigger } from './plan-revision';
 
 export const ArchitecturePlanRefSchema = z.object({
   planId: z.string().min(1),

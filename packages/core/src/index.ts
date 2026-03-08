@@ -9,6 +9,7 @@ export * from './sandbox-mock';
 export * from './diff';
 export * from './resume';
 export * from './architecture-plan';
+export * from './plan-revision';
 export * from './plan-validation';
 export * from './task-decomposition';
 export * from './architecture-enforcer';
