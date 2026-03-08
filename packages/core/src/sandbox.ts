@@ -86,6 +86,34 @@ export interface SandboxEnvironment {
   cleanup(): Promise<void>;
 }
 
+export interface IntegrationSandboxServiceConfig {
+  /** Docker image to use for this service */
+  image: string;
+  /** Environment variables to inject */
+  env?: Record<string, string>;
+  /** Exposed port mappings: key=internal port, value=host port */
+  ports?: Record<number, number>;
+  /** Health-check command (runs inside container) */
+  healthCheck?: string;
+}
+
+export interface IntegrationSandbox {
+  /** Register a service before starting the sandbox. Must be called before start(). */
+  addService(name: string, config: IntegrationSandboxServiceConfig): void;
+
+  /** Start all registered services. */
+  start(): Promise<void>;
+
+  /** Get the base URL for a named service (e.g. "http://localhost:3001"). */
+  getServiceUrl(name: string): string;
+
+  /** Execute a shell command inside a named service's container. */
+  executeInService(name: string, command: string): Promise<SandboxResult>;
+
+  /** Stop and remove all containers. */
+  cleanup(): Promise<void>;
+}
+
 // ─── Custom Errors ───────────────────────────────────────────────────────────
 
 export class SandboxInitError extends Error {
