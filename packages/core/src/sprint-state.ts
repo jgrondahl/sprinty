@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ArchitecturePlanSchema } from './architecture-plan';
 import { PlanRevisionTriggerSchema, type PlanRevisionTrigger } from './plan-revision';
 import { SprintTaskPlanSchema, TaskScheduleSchema } from './task-decomposition';
-import type { WorkspaceState } from './types';
+import { AgentPersona, type WorkspaceState } from './types';
 import { WorkspaceManager } from './workspace';
 
 // ─── Sprint State Schemas ─────────────────────────────────────────────────────
@@ -52,6 +52,14 @@ export class DefaultHumanGate implements HumanGate {
     );
   }
 }
+
+export const GateConfigSchema = z.object({
+  after: z.nativeEnum(AgentPersona),
+  requireApproval: z.enum(['always', 'on-cross-service', 'on-breaking-change', 'never']),
+  notifyVia: z.enum(['cli-prompt']).optional(),
+});
+
+export type GateConfig = z.infer<typeof GateConfigSchema>;
 
 // ─── Sprint Checkpoint Manager ────────────────────────────────────────────────
 
