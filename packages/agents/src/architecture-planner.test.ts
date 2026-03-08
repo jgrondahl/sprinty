@@ -6,6 +6,7 @@ import { ArchitecturePlannerAgent } from './architecture-planner';
 import { AgentCallError } from './base-agent';
 import {
   AgentPersona,
+  ArchitecturePlanSchema,
   ArchitecturePlanManager,
   HandoffManager,
   StorySource,
@@ -16,6 +17,8 @@ import {
   type HandoffDocument,
   type LlmClient,
   type LlmRequest,
+  type EvidenceSummary,
+  type PlanRevisionTrigger,
   type Story,
   type WorkspaceState,
   WorkspaceManager,
@@ -251,6 +254,119 @@ const makePassCSprintResponse = (stories: Story[]) => ({
     },
   ],
 });
+
+const makePlanRevisionTrigger = (): PlanRevisionTrigger => ({
+  reason: 'architecture-violation',
+  level: 'sprint',
+  taskId: 'task-payments-capture',
+  module: 'payments',
+  description: 'Payment capture flow violates boundary constraints under retry conditions',
+  evidence: ['constraint dep-boundary-payments-auth violated twice', 'missing idempotent capture adapter'],
+  timestamp: now,
+});
+
+const makeEvidenceSummary = (): EvidenceSummary => ({
+  triggerId: 'trigger-001',
+  level: 'sprint',
+  failingModules: ['payments'],
+  violatedConstraintIds: ['dep-boundary-payments-auth'],
+  missingCapabilities: ['idempotent payment capture adapter'],
+  resourceLimitFailures: [
+    {
+      taskId: 'task-payments-capture',
+      limit: 'runtime',
+      actual: 920,
+      configured: 700,
+    },
+  ],
+  affectedFiles: ['src/modules/payments/capture.ts'],
+  artifactRefs: ['artifacts/enforcement-report-task-payments-capture.json'],
+});
+
+const makeGlobalPlan = (stories: Story[]): ArchitecturePlan => {
+  const passB = makePassBResponse(stories);
+  const passC = makePassCGlobalResponse(stories);
+  return ArchitecturePlanSchema.parse({
+    planId: 'proj-planner-global-base',
+    schemaVersion: 1,
+    projectId: 'proj-planner',
+    level: 'global',
+    scopeKey: 'global',
+    status: 'active',
+    createdAt: now,
+    revisionNumber: 0,
+    techStack: passB.techStack,
+    modules: passB.modules,
+    storyModuleMapping: passC.storyModuleMapping,
+    executionOrder: passC.executionOrder,
+    decisions: passB.decisions,
+    constraints: passC.constraints,
+  });
+};
+
+const makeCurrentSprintPlan = (stories: Story[], globalPlan?: ArchitecturePlan): ArchitecturePlan => {
+  const passB = makePassBResponse(stories);
+  const passC = makePassCSprintResponse(stories);
+  const parentGlobal = globalPlan ?? makeGlobalPlan(stories);
+  return ArchitecturePlanSchema.parse({
+    planId: 'proj-planner-sprint-sprint-1-current',
+    schemaVersion: 1,
+    projectId: 'proj-planner',
+    level: 'sprint',
+    scopeKey: 'sprint:sprint-1',
+    sprintId: 'sprint-1',
+    parentPlanId: parentGlobal.planId,
+    status: 'active',
+    createdAt: now,
+    revisionNumber: 0,
+    techStack: passB.techStack,
+    modules: passB.modules,
+    storyModuleMapping: passC.storyModuleMapping,
+    executionOrder: passC.executionOrder,
+    decisions: passB.decisions,
+    constraints: passC.constraints,
+  });
+};
+
+const makeRevisionLlmResponse = (stories: Story[]) => {
+  const passB = makePassBResponse(stories);
+  return {
+    modules: passB.modules.map((module) =>
+      module.name === 'payments'
+        ? {
+            ...module,
+            exposedInterfaces: [...module.exposedInterfaces, 'PaymentCaptureAdapter'],
+          }
+        : module
+    ),
+    constraints: [
+      {
+        id: 'SCONST-001',
+        type: 'technology',
+        description: 'Sprint code must preserve TypeScript and Express conventions with Bun tests',
+        rule: 'Implement sprint scope using TypeScript, Express, Bun test suite',
+        severity: 'error',
+      },
+      {
+        id: 'SCONST-REV-001',
+        type: 'boundary',
+        description: 'Payments may call auth only through exported adapter interface',
+        rule: 'payments -> auth:AuthService only via PaymentCaptureAdapter',
+        severity: 'error',
+      },
+    ],
+    storyModuleMapping: makePassCSprintResponse(stories).storyModuleMapping,
+    executionOrder: makePassCSprintResponse(stories).executionOrder,
+    newDecision: {
+      id: 'ADR-REV-001',
+      title: 'Revise payment/auth integration under constraint pressure',
+      context: 'Enforcement evidence shows repeated boundary violations in payment capture flow',
+      decision: 'Add explicit PaymentCaptureAdapter contract and tighten boundary rule for auth calls',
+      consequences: 'Preserves module topology while reducing integration drift risk',
+      status: 'accepted',
+    },
+  };
+};
 
 function makeMockSequentialClient(
   responses: (object | Error)[],
@@ -759,6 +875,228 @@ describe('ArchitecturePlannerAgent', () => {
     for (const story of stories) {
       expect(mapped.has(story.id)).toBe(true);
     }
+  });
+
+  describe('reviseSprint', () => {
+    it('happy path revises sprint plan, appends decision, and supersedes existing plan', async () => {
+      const stories = makeStories();
+      const trigger = makePlanRevisionTrigger();
+      const evidence = makeEvidenceSummary();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const revision = makeRevisionLlmResponse(stories);
+      const mock = makeMockSequentialClient([revision]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+
+      const result = await agent.reviseSprint({
+        trigger,
+        evidence,
+        currentSprintPlan,
+        globalPlan,
+        stories,
+      });
+
+      expect(result.revisedPlan.revisionNumber).toBe(currentSprintPlan.revisionNumber + 1);
+      expect(result.revisedPlan.supersedesPlanId).toBe(currentSprintPlan.planId);
+      expect(result.revisedPlan.revisionTrigger?.reason).toBe(trigger.reason);
+      expect(result.revisedPlan.decisions).toHaveLength(currentSprintPlan.decisions.length + 1);
+      expect(result.newDecision.id).toBe('ADR-REV-001');
+
+      const stale = planManager.load(ws, currentSprintPlan.planId);
+      const revised = planManager.load(ws, result.revisedPlan.planId);
+      expect(stale?.status).toBe('stale');
+      expect(stale?.supersededByPlanId).toBe(result.revisedPlan.planId);
+      expect(revised?.status).toBe('active');
+      expect(result.supersededPlanId).toBe(currentSprintPlan.planId);
+    });
+
+    it('preserves tech stack from current sprint plan', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const mock = makeMockSequentialClient([makeRevisionLlmResponse(stories)]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+
+      const result = await agent.reviseSprint({
+        trigger: makePlanRevisionTrigger(),
+        evidence: makeEvidenceSummary(),
+        currentSprintPlan,
+        globalPlan,
+        stories,
+      });
+
+      expect(result.revisedPlan.techStack).toEqual(currentSprintPlan.techStack);
+    });
+
+    it('persists via supersede by staling old plan and creating new plan artifact', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const mock = makeMockSequentialClient([makeRevisionLlmResponse(stories)]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+      const result = await agent.reviseSprint({
+        trigger: makePlanRevisionTrigger(),
+        evidence: makeEvidenceSummary(),
+        currentSprintPlan,
+        globalPlan,
+        stories,
+      });
+
+      const artifactsDir = path.join(ws.basePath, 'artifacts');
+      const oldPath = path.join(artifactsDir, `architecture-plan-${currentSprintPlan.planId}.json`);
+      const newPath = path.join(artifactsDir, `architecture-plan-${result.revisedPlan.planId}.json`);
+
+      expect(fs.existsSync(oldPath)).toBe(true);
+      expect(fs.existsSync(newPath)).toBe(true);
+      expect(planManager.load(ws, currentSprintPlan.planId)?.status).toBe('stale');
+      expect(planManager.load(ws, result.revisedPlan.planId)?.status).toBe('active');
+    });
+
+    it('throws on non-sprint current plan', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const mock = makeMockSequentialClient([makeRevisionLlmResponse(stories)]);
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+
+      await expect(
+        agent.reviseSprint({
+          trigger: makePlanRevisionTrigger(),
+          evidence: makeEvidenceSummary(),
+          currentSprintPlan: globalPlan,
+          globalPlan,
+          stories,
+        })
+      ).rejects.toThrow('currentSprintPlan must be a sprint-level plan');
+    });
+
+    it('throws without workspace', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const mock = makeMockSequentialClient([makeRevisionLlmResponse(stories)]);
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+
+      await expect(
+        agent.reviseSprint({
+          trigger: makePlanRevisionTrigger(),
+          evidence: makeEvidenceSummary(),
+          currentSprintPlan,
+          globalPlan,
+          stories,
+        })
+      ).rejects.toThrow('workspace is not set');
+    });
+
+    it('retries on validation failure then succeeds', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const invalid = {
+        ...makeRevisionLlmResponse(stories),
+        storyModuleMapping: [
+          {
+            ...makePassCSprintResponse(stories).storyModuleMapping[0],
+            storyId: 'story-missing',
+          },
+          ...makePassCSprintResponse(stories).storyModuleMapping.slice(1),
+        ],
+      };
+      const valid = makeRevisionLlmResponse(stories);
+      const mock = makeMockSequentialClient([invalid, valid]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+
+      const result = await agent.reviseSprint({
+        trigger: makePlanRevisionTrigger(),
+        evidence: makeEvidenceSummary(),
+        currentSprintPlan,
+        globalPlan,
+        stories,
+      });
+
+      expect(mock.calls.n).toBe(2);
+      expect(validatePlan(result.revisedPlan).valid).toBe(true);
+    });
+
+    it('throws after max retries exhausted', async () => {
+      const stories = makeStories();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const invalid = {
+        ...makeRevisionLlmResponse(stories),
+        storyModuleMapping: [
+          {
+            ...makePassCSprintResponse(stories).storyModuleMapping[0],
+            storyId: 'story-missing',
+          },
+          ...makePassCSprintResponse(stories).storyModuleMapping.slice(1),
+        ],
+      };
+      const strictConfig: AgentConfig = { ...plannerConfig, maxRetries: 1 };
+      const mock = makeMockSequentialClient([invalid, invalid]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(strictConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+
+      await expect(
+        agent.reviseSprint({
+          trigger: makePlanRevisionTrigger(),
+          evidence: makeEvidenceSummary(),
+          currentSprintPlan,
+          globalPlan,
+          stories,
+        })
+      ).rejects.toThrow('after 1 retry attempt(s)');
+    });
+
+    it('includes trigger and evidence in LLM user message', async () => {
+      const stories = makeStories();
+      const trigger = makePlanRevisionTrigger();
+      const evidence = makeEvidenceSummary();
+      const globalPlan = makeGlobalPlan(stories);
+      const currentSprintPlan = makeCurrentSprintPlan(stories, globalPlan);
+      const mock = makeMockSequentialClient([makeRevisionLlmResponse(stories)]);
+
+      const planManager = new ArchitecturePlanManager(wsMgr);
+      planManager.save(ws, currentSprintPlan);
+
+      const agent = new ArchitecturePlannerAgent(plannerConfig, wsMgr, handoffMgr, mock.client);
+      agent.setWorkspace(ws);
+      await agent.reviseSprint({
+        trigger,
+        evidence,
+        currentSprintPlan,
+        globalPlan,
+        stories,
+      });
+
+      expect(mock.requests[0]?.userMessage).toContain('"reason":"architecture-violation"');
+      expect(mock.requests[0]?.userMessage).toContain('"triggerId":"trigger-001"');
+      expect(mock.requests[0]?.userMessage).toContain('"failingModules":["payments"]');
+    });
   });
 
   it('validates plan and rejects cyclic dependencies', async () => {

@@ -8,11 +8,13 @@ import {
   type ArchitectureConstraint,
   type ArchitectureDecision,
   type ArchitecturePlan,
+  type EvidenceSummary,
   type ExecutionGroup,
   type HandoffDocument,
   type HandoffManager,
   type LlmClient,
   type ModuleDefinition,
+  type PlanRevisionTrigger,
   type PlanQualityScore,
   type Story,
   type StoryModuleMapping,
@@ -36,6 +38,21 @@ export interface PlanSprintResult {
   sprintPlan: ArchitecturePlan;
   globalScore: PlanQualityScore;
   sprintScore: PlanQualityScore;
+}
+
+export interface ReviseSprintOptions {
+  trigger: PlanRevisionTrigger;
+  evidence: EvidenceSummary;
+  currentSprintPlan: ArchitecturePlan;
+  globalPlan: ArchitecturePlan;
+  stories: Story[];
+}
+
+export interface ReviseSprintResult {
+  revisedPlan: ArchitecturePlan;
+  score: PlanQualityScore;
+  supersededPlanId: string;
+  newDecision: ArchitectureDecision;
 }
 
 // ─── Internal Pass Types ──────────────────────────────────────────────────────
@@ -64,6 +81,14 @@ interface PassCContext {
   stories: Story[];
   sprintId?: string;
   globalPlan?: ArchitecturePlan;
+}
+
+interface RevisionLlmResult {
+  modules: ModuleDefinition[];
+  constraints: ArchitectureConstraint[];
+  storyModuleMapping: StoryModuleMapping[];
+  executionOrder: ExecutionGroup[];
+  newDecision: ArchitectureDecision;
 }
 
 type FailingGlobalPass = 'A' | 'B' | 'C';
@@ -220,6 +245,77 @@ RULES:
 4. Constraints may narrow global constraints but must not contradict them.
 5. executionOrder should prioritize dependency-safe delivery slices.`;
 
+const PASS_REVISION_SYSTEM_PROMPT = `You are the Sprint Architecture Revision Pass.
+
+TASK:
+Revise an existing sprint-level architecture plan based on a revision trigger and summarized evidence.
+You are revising an existing plan, NOT creating a new plan from scratch.
+
+INPUTS PROVIDED:
+- Revision trigger (reason, context, evidence pointers)
+- Evidence summary (failing modules, violated constraints, missing capabilities, resource limit failures, affected files)
+- Current sprint plan
+- Global plan modules (reference only)
+- Sprint stories
+
+RESPONSE FORMAT (JSON ONLY):
+{
+  "modules": [
+    {
+      "name": "string",
+      "description": "string",
+      "responsibility": "string",
+      "directory": "string",
+      "exposedInterfaces": ["string"],
+      "dependencies": ["string"],
+      "owningStories": ["string"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "string",
+      "type": "dependency|naming|pattern|boundary|technology",
+      "description": "string",
+      "rule": "string",
+      "severity": "error|warning"
+    }
+  ],
+  "storyModuleMapping": [
+    {
+      "storyId": "string",
+      "modules": ["string"],
+      "primaryModule": "string",
+      "estimatedFiles": ["string"]
+    }
+  ],
+  "executionOrder": [
+    {
+      "groupId": 1,
+      "storyIds": ["string"],
+      "rationale": "string",
+      "dependsOn": [0]
+    }
+  ],
+  "newDecision": {
+    "id": "string",
+    "title": "string",
+    "context": "string",
+    "decision": "string",
+    "consequences": "string",
+    "status": "accepted|proposed|superseded"
+  }
+}
+
+RULES:
+1. Return strict JSON only. No markdown, no commentary.
+2. Preserve as much of the current sprint plan as possible.
+3. Do NOT change the tech stack.
+4. Do NOT remove constraints wholesale; only relax or adjust specific constraints that are causing the issue.
+5. Preserve existing module boundaries that are not implicated by the trigger/evidence.
+6. Ensure storyModuleMapping covers every provided story exactly once.
+7. Ensure executionOrder uses positive groupId values and valid dependsOn references.
+8. newDecision must clearly explain what changed and why, grounded in the trigger and evidence.`;
+
 // ─── Architecture Planner Agent ───────────────────────────────────────────────
 
 export class ArchitecturePlannerAgent extends BaseAgent {
@@ -325,6 +421,69 @@ export class ArchitecturePlannerAgent extends BaseAgent {
       globalScore: globalOutcome.score,
       sprintScore: sprintOutcome.score,
     };
+  }
+
+  async reviseSprint(options: ReviseSprintOptions): Promise<ReviseSprintResult> {
+    if (options.currentSprintPlan.level !== 'sprint') {
+      throw new Error('ArchitecturePlannerAgent.reviseSprint: currentSprintPlan must be a sprint-level plan');
+    }
+
+    if (!this.currentWorkspace) {
+      throw new Error('ArchitecturePlannerAgent.reviseSprint: workspace is not set');
+    }
+
+    const userMessage = [
+      `Trigger: ${JSON.stringify(options.trigger)}`,
+      `Evidence: ${JSON.stringify(options.evidence)}`,
+      `Current sprint plan: ${JSON.stringify(options.currentSprintPlan)}`,
+      `Global plan modules (for reference): ${JSON.stringify(options.globalPlan.modules)}`,
+      `Stories: ${JSON.stringify(options.stories)}`,
+      'Return only the requested JSON schema.',
+    ].join('\n\n');
+
+    let retriesUsed = 0;
+    while (true) {
+      const rawResponse = await this.callLlm({
+        systemPrompt: PASS_REVISION_SYSTEM_PROMPT,
+        userMessage,
+      });
+
+      const llmResult = this.parseJsonResponse<RevisionLlmResult>(rawResponse, 'PassRevision', [
+        'modules',
+        'constraints',
+        'storyModuleMapping',
+        'executionOrder',
+        'newDecision',
+      ]);
+
+      const revisedPlan = this.assembleRevisedSprintPlan(
+        options.currentSprintPlan,
+        llmResult,
+        options.trigger
+      );
+      const validation = validatePlan(revisedPlan);
+      const score = scorePlan(revisedPlan);
+
+      if (validation.errors.length === 0 && score.status !== 'fail') {
+        const planManager = new ArchitecturePlanManager(this.workspaceManager);
+        planManager.supersede(this.currentWorkspace, options.currentSprintPlan.planId, revisedPlan);
+
+        return {
+          revisedPlan,
+          score,
+          supersededPlanId: options.currentSprintPlan.planId,
+          newDecision: llmResult.newDecision,
+        };
+      }
+
+      if (retriesUsed >= this.config.maxRetries) {
+        throw new Error(
+          `ArchitecturePlannerAgent: sprint revision failed quality gate after ${retriesUsed} retry attempt(s). Validation errors: ${validation.errors.join('; ') || 'none'}. Score status: ${score.status}`
+        );
+      }
+
+      retriesUsed += 1;
+    }
   }
 
   // ── L0 Global Planning ─────────────────────────────────────────────────────
@@ -593,6 +752,34 @@ export class ArchitecturePlannerAgent extends BaseAgent {
       executionOrder: draft.executionOrder,
       decisions: stack.decisions,
       constraints: draft.constraints,
+    });
+  }
+
+  private assembleRevisedSprintPlan(
+    current: ArchitecturePlan,
+    llmResult: RevisionLlmResult,
+    trigger: PlanRevisionTrigger
+  ): ArchitecturePlan {
+    const now = new Date().toISOString();
+    return ArchitecturePlanSchema.parse({
+      planId: `${current.projectId}-sprint-${current.sprintId}-rev${current.revisionNumber + 1}-${Date.now()}`,
+      schemaVersion: current.schemaVersion,
+      projectId: current.projectId,
+      level: 'sprint',
+      scopeKey: current.scopeKey,
+      sprintId: current.sprintId,
+      parentPlanId: current.parentPlanId,
+      supersedesPlanId: current.planId,
+      status: 'active',
+      createdAt: now,
+      revisionNumber: current.revisionNumber + 1,
+      revisionTrigger: trigger,
+      techStack: current.techStack,
+      modules: llmResult.modules,
+      storyModuleMapping: llmResult.storyModuleMapping,
+      executionOrder: llmResult.executionOrder,
+      decisions: [...current.decisions, llmResult.newDecision],
+      constraints: llmResult.constraints,
     });
   }
 
