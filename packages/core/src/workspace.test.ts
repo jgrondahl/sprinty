@@ -149,3 +149,81 @@ describe('WorkspaceManager path traversal protection', () => {
     expect(fs.existsSync(escapePath)).toBe(false);
   });
 });
+
+describe('ProjectWorkspace methods', () => {
+  it('createProjectWorkspace creates project/, project/src/, and project/artifacts/ directories', () => {
+    const projectPath = manager.createProjectWorkspace('proj');
+    expect(fs.existsSync(projectPath)).toBe(true);
+    expect(fs.existsSync(path.join(projectPath, 'src'))).toBe(true);
+    expect(fs.existsSync(path.join(projectPath, 'artifacts'))).toBe(true);
+  });
+
+  it('writeProjectFile + readProjectFile round-trip for a simple file', () => {
+    manager.createProjectWorkspace('proj');
+    manager.writeProjectFile('proj', 'README.md', '# Hello');
+    const content = manager.readProjectFile('proj', 'README.md');
+    expect(content).toBe('# Hello');
+  });
+
+  it('writeProjectFile creates nested directories', () => {
+    manager.createProjectWorkspace('proj');
+    manager.writeProjectFile('proj', 'src/auth/service.ts', 'export const ok = true;');
+    const fullPath = path.join(manager.getProjectWorkspacePath('proj'), 'src', 'auth', 'service.ts');
+    expect(fs.existsSync(fullPath)).toBe(true);
+  });
+
+  it('listProjectFiles returns relative paths of written files', () => {
+    manager.createProjectWorkspace('proj');
+    manager.writeProjectFile('proj', 'src/a.ts', 'a');
+    manager.writeProjectFile('proj', 'artifacts/build.txt', 'b');
+
+    const files = manager.listProjectFiles('proj');
+    expect(files).toContain('src/a.ts');
+    expect(files).toContain('artifacts/build.txt');
+  });
+
+  it('listProjectFiles returns [] for empty project workspace', () => {
+    manager.createProjectWorkspace('proj');
+    const files = manager.listProjectFiles('proj');
+    expect(files).toEqual([]);
+  });
+
+  it('readProjectFile throws on path traversal', () => {
+    manager.createProjectWorkspace('proj');
+    expect(() => manager.readProjectFile('proj', '../../../etc/passwd')).toThrow(PathTraversalError);
+  });
+
+  it('writeProjectFile throws on path traversal', () => {
+    manager.createProjectWorkspace('proj');
+    expect(() => manager.writeProjectFile('proj', '../../../etc/passwd', 'evil')).toThrow(PathTraversalError);
+  });
+
+  it('promoteFiles copies files from story workspace to project workspace', () => {
+    const storyWs = manager.createWorkspace('proj', 'story-1');
+    manager.writeFile(storyWs, 'artifacts/src/index.ts', 'export const n = 1;');
+    manager.writeFile(storyWs, 'artifacts/src/lib/util.ts', 'export const u = 2;');
+
+    const promoted = manager.promoteFiles('proj', storyWs, 'artifacts/src');
+
+    expect(promoted).toContain('src/index.ts');
+    expect(promoted).toContain('src/lib/util.ts');
+    expect(manager.readProjectFile('proj', 'src/index.ts')).toBe('export const n = 1;');
+    expect(manager.readProjectFile('proj', 'src/lib/util.ts')).toBe('export const u = 2;');
+  });
+
+  it('promoteFiles returns [] when source directory does not exist', () => {
+    const storyWs = manager.createWorkspace('proj', 'story-1');
+    const promoted = manager.promoteFiles('proj', storyWs, 'artifacts/missing');
+    expect(promoted).toEqual([]);
+  });
+
+  it('promoteFiles preserves directory structure', () => {
+    const storyWs = manager.createWorkspace('proj', 'story-1');
+    manager.writeFile(storyWs, 'artifacts/src/nested/deep/file.ts', 'x');
+
+    const promoted = manager.promoteFiles('proj', storyWs, 'artifacts/src');
+
+    expect(promoted).toContain('src/nested/deep/file.ts');
+    expect(manager.readProjectFile('proj', 'src/nested/deep/file.ts')).toBe('x');
+  });
+});

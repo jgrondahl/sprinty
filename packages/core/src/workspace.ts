@@ -33,6 +33,10 @@ export class WorkspaceManager {
     return path.join(this.baseDir, projectId, 'stories', storyId);
   }
 
+  getProjectWorkspacePath(projectId: string): string {
+    return path.join(this.getProjectPath(projectId), 'project');
+  }
+
   private getProjectPath(projectId: string): string {
     return path.join(this.baseDir, projectId);
   }
@@ -45,6 +49,18 @@ export class WorkspaceManager {
     const normalized = path.normalize(relativePath);
     const resolved = path.resolve(ws.basePath, normalized);
     const base = path.resolve(ws.basePath);
+
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+      throw new PathTraversalError(relativePath);
+    }
+    return resolved;
+  }
+
+  private resolveProjectSafe(projectId: string, relativePath: string): string {
+    const normalized = path.normalize(relativePath);
+    const basePath = this.getProjectWorkspacePath(projectId);
+    const resolved = path.resolve(basePath, normalized);
+    const base = path.resolve(basePath);
 
     if (!resolved.startsWith(base + path.sep) && resolved !== base) {
       throw new PathTraversalError(relativePath);
@@ -84,6 +100,21 @@ export class WorkspaceManager {
       files: {},
       agentsLog: [],
     };
+  }
+
+  createProjectWorkspace(projectId: string): string {
+    const projectPath = this.getProjectWorkspacePath(projectId);
+    const dirs = [
+      projectPath,
+      path.join(projectPath, 'src'),
+      path.join(projectPath, 'artifacts'),
+    ];
+
+    for (const dir of dirs) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    return projectPath;
   }
 
   /**
@@ -144,6 +175,71 @@ export class WorkspaceManager {
     fs.writeFileSync(fullPath, content, 'utf-8');
     // Keep the in-memory index up to date
     ws.files[relativePath] = fullPath;
+  }
+
+  readProjectFile(projectId: string, relativePath: string): string {
+    const fullPath = this.resolveProjectSafe(projectId, relativePath);
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`File not found in project workspace: ${relativePath}`);
+    }
+    return fs.readFileSync(fullPath, 'utf-8');
+  }
+
+  writeProjectFile(projectId: string, relativePath: string, content: string): void {
+    const fullPath = this.resolveProjectSafe(projectId, relativePath);
+    const dir = path.dirname(fullPath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(fullPath, content, 'utf-8');
+  }
+
+  listProjectFiles(projectId: string): string[] {
+    const projectPath = this.getProjectWorkspacePath(projectId);
+    if (!fs.existsSync(projectPath)) return [];
+
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else {
+          files.push(path.relative(projectPath, fullPath).split(path.sep).join('/'));
+        }
+      }
+    };
+
+    walk(projectPath);
+    return files;
+  }
+
+  promoteFiles(projectId: string, storyWs: WorkspaceState, srcPattern: string): string[] {
+    const srcRoot = path.join(storyWs.basePath, srcPattern);
+    if (!fs.existsSync(srcRoot)) return [];
+
+    const stat = fs.statSync(srcRoot);
+    if (!stat.isDirectory()) return [];
+
+    const projectPath = this.createProjectWorkspace(projectId);
+    const destinationRoot = path.join(projectPath, 'src');
+    const promoted: string[] = [];
+
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const sourcePath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(sourcePath);
+        } else {
+          const relFromSourceRoot = path.relative(srcRoot, sourcePath);
+          const destinationPath = path.join(destinationRoot, relFromSourceRoot);
+          fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+          fs.copyFileSync(sourcePath, destinationPath);
+          promoted.push(path.relative(projectPath, destinationPath).split(path.sep).join('/'));
+        }
+      }
+    };
+
+    walk(srcRoot);
+    return promoted;
   }
 
   listFiles(ws: WorkspaceState): string[] {
