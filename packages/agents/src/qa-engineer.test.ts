@@ -9,6 +9,8 @@ import {
   AgentPersona,
   StoryState,
   StorySource,
+  makeSuccessResult,
+  makeFailResult,
   type AgentConfig,
   type Story,
   type HandoffDocument,
@@ -341,5 +343,90 @@ describe('QAEngineerAgent — error handling', () => {
 
     const handoff = await agent.execute(handoffNoFiles, makeInReviewStory());
     expect(handoff.stateOfWorld['verdict']).toBe('PASS');
+  });
+});
+
+// ─── Sandbox Results in QA ────────────────────────────────────────────────────
+
+describe('QAEngineerAgent — sandbox results', () => {
+  function makeDeveloperHandoffWithSandbox(
+    buildResult: ReturnType<typeof makeSuccessResult>,
+    testResult: ReturnType<typeof makeSuccessResult>,
+  ): HandoffDocument {
+    return {
+      ...makeDeveloperHandoff(),
+      stateOfWorld: {
+        ...makeDeveloperHandoff().stateOfWorld,
+        sandboxInstallResult: JSON.stringify(makeSuccessResult('npm install', 'added 50 packages')),
+        sandboxBuildResult: JSON.stringify(buildResult),
+        sandboxTestResult: JSON.stringify(testResult),
+      },
+    };
+  }
+
+  it('includes sandbox results in LLM prompt when present in handoff', async () => {
+    let capturedMessage = '';
+    const mockClient: LlmClient = {
+      complete: async ({ userMessage }) => {
+        capturedMessage = userMessage as string;
+        return JSON.stringify(passVerdict);
+      },
+    };
+
+    const buildOk = makeSuccessResult('npm run build', 'compiled successfully');
+    const testOk = makeSuccessResult('npm test', '5 tests passed');
+
+    const agent = new QAEngineerAgent(agentConfig, wsMgr, handoffMgr, mockClient);
+    agent.setWorkspace(ws);
+
+    await agent.execute(
+      makeDeveloperHandoffWithSandbox(buildOk, testOk),
+      makeInReviewStory(),
+    );
+
+    expect(capturedMessage).toContain('Sandbox Execution Results');
+    expect(capturedMessage).toContain('PASSED');
+    expect(capturedMessage).toContain('compiled successfully');
+  });
+
+  it('shows FAILED status for failed sandbox steps', async () => {
+    let capturedMessage = '';
+    const mockClient: LlmClient = {
+      complete: async ({ userMessage }) => {
+        capturedMessage = userMessage as string;
+        return JSON.stringify(failVerdict);
+      },
+    };
+
+    const buildFail = makeFailResult('npm run build', 'TSError: Cannot find module');
+    const testOk = makeSuccessResult('npm test', '');
+
+    const agent = new QAEngineerAgent(agentConfig, wsMgr, handoffMgr, mockClient);
+    agent.setWorkspace(ws);
+
+    await agent.execute(
+      makeDeveloperHandoffWithSandbox(buildFail, testOk),
+      makeInReviewStory(),
+    );
+
+    expect(capturedMessage).toContain('FAILED');
+    expect(capturedMessage).toContain('TSError');
+  });
+
+  it('does not include sandbox section when no sandbox results in handoff', async () => {
+    let capturedMessage = '';
+    const mockClient: LlmClient = {
+      complete: async ({ userMessage }) => {
+        capturedMessage = userMessage as string;
+        return JSON.stringify(passVerdict);
+      },
+    };
+
+    const agent = new QAEngineerAgent(agentConfig, wsMgr, handoffMgr, mockClient);
+    agent.setWorkspace(ws);
+
+    await agent.execute(makeDeveloperHandoff(), makeInReviewStory());
+
+    expect(capturedMessage).not.toContain('Sandbox Execution Results');
   });
 });

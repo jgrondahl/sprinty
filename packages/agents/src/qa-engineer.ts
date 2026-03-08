@@ -4,6 +4,7 @@ import {
   StoryState,
   type HandoffDocument,
   type Story,
+  type SandboxResult,
 } from '@splinty/core';
 import { StoryStateMachine } from '@splinty/core';
 import { BaseAgent } from './base-agent';
@@ -87,6 +88,8 @@ export class QAEngineerAgent extends BaseAgent {
         ? sourceFileContents.join('\n\n')
         : 'No source files available.';
 
+    const sandboxSection = this.formatSandboxResults(handoff);
+
     const userMessage = `Review the following implementation for QA:
 
 Story: ${story.title}
@@ -99,7 +102,7 @@ ${acceptanceCriteria}
 
 Source Files:
 ${filesSection}
-
+${sandboxSection}
 Verify each AC, check for bugs, write edge-case tests, and produce a QA verdict.
 Return JSON with passedAC, failedAC, bugs, verdict (PASS/FAIL/BLOCKED), additionalTests, and report.`;
 
@@ -274,5 +277,36 @@ Return JSON with passedAC, failedAC, bugs, verdict (PASS/FAIL/BLOCKED), addition
       `Fix failing acceptance criteria and bugs — rework cycle ${newReworkCount}`,
       qaArtifacts
     );
+  }
+
+  // ── Sandbox Result Formatting ───────────────────────────────────────────────
+
+  private formatSandboxResults(handoff: HandoffDocument | null): string {
+    if (!handoff) return '';
+
+    const parts: string[] = [];
+    const steps = ['Install', 'Build', 'Test'] as const;
+    const keys = ['sandboxInstallResult', 'sandboxBuildResult', 'sandboxTestResult'] as const;
+
+    for (let i = 0; i < keys.length; i++) {
+      const raw = handoff.stateOfWorld[keys[i]!];
+      if (!raw) continue;
+
+      try {
+        const result = JSON.parse(raw) as SandboxResult;
+        const status = result.exitCode === 0 ? '✅ PASSED' : '❌ FAILED';
+        parts.push(`${steps[i]} (${status}, exit=${result.exitCode}, ${result.durationMs}ms)`);
+        if (result.stdout) parts.push(`  stdout: ${result.stdout.slice(0, 2000)}`);
+        if (result.stderr) parts.push(`  stderr: ${result.stderr.slice(0, 2000)}`);
+        if (result.resourceLimitViolation) {
+          parts.push(`  ⚠ Resource limit: ${result.resourceLimitViolation.description}`);
+        }
+      } catch {
+        parts.push(`${steps[i]}: [unparseable result]`);
+      }
+    }
+
+    if (parts.length === 0) return '';
+    return `\nSandbox Execution Results:\n${parts.join('\n')}\n`;
   }
 }
