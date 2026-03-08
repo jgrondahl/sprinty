@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { ArchitecturePlanSchema } from './architecture-plan';
+import { EnforcementReportSchema } from './architecture-enforcer';
 import { PlanRevisionTriggerSchema, type PlanRevisionTrigger } from './plan-revision';
 import { SprintTaskPlanSchema, TaskScheduleSchema } from './task-decomposition';
 import { AgentPersona, type WorkspaceState } from './types';
@@ -27,11 +28,13 @@ export const PlannedSprintStateSchema = z.object({
   currentSprintPlan: ArchitecturePlanSchema,
   currentGlobalPlanId: z.string().min(1),
   taskPlan: SprintTaskPlanSchema,
+  runId: z.string().min(1),
   revisionCount: z.number().int().min(0),
   maxRevisions: z.number().int().positive().default(1),
   storyRevisionCounts: z.record(z.string(), z.number().int().min(0)).default({}),
   maxRevisionsPerStory: z.number().int().positive().default(1),
   checkpoint: SprintCheckpointSchema.optional(),
+  enforcementReports: z.array(EnforcementReportSchema).default([]),
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────

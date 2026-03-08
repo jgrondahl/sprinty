@@ -130,6 +130,7 @@ const makePlannedState = (): PlannedSprintState => ({
   currentSprintPlan: makeArchitecturePlan(),
   currentGlobalPlanId: 'proj-global-001',
   taskPlan: makeSprintTaskPlan(),
+  runId: 'run-1',
   revisionCount: 0,
   maxRevisions: 1,
   storyRevisionCounts: { 'story-1': 0 },
@@ -161,12 +162,14 @@ describe('PlannedSprintStateSchema', () => {
       currentSprintPlan: makeArchitecturePlan(),
       currentGlobalPlanId: 'proj-global-001',
       taskPlan: makeSprintTaskPlan(),
+      runId: 'run-defaults',
       revisionCount: 0,
     });
 
     expect(parsed.maxRevisions).toBe(1);
     expect(parsed.maxRevisionsPerStory).toBe(1);
     expect(parsed.storyRevisionCounts).toEqual({});
+    expect(parsed.enforcementReports).toEqual([]);
   });
 });
 
