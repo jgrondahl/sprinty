@@ -153,20 +153,47 @@ export class DeveloperAgent extends BaseAgent {
     const techStack = handoff?.stateOfWorld['techStack'] ?? 'TypeScript';
     const acceptanceCriteria = story.acceptanceCriteria.join('\n');
 
+    const taskRef = handoff?.task;
+    const taskContextSection = taskRef
+      ? [
+          `Task: ${taskRef.taskId} (module: ${taskRef.module}, type: ${taskRef.type})`,
+          taskRef.description ? `Task Description: ${taskRef.description}` : '',
+          taskRef.targetFiles?.length
+            ? `Target Files:\n${taskRef.targetFiles.map((f) => `  - ${f}`).join('\n')}`
+            : '',
+          taskRef.expectedOutputs?.length
+            ? `Expected Outputs:\n${taskRef.expectedOutputs.map((o) => `  - ${o}`).join('\n')}`
+            : '',
+          taskRef.acceptanceCriteria?.length
+            ? `Task Acceptance Criteria:\n${taskRef.acceptanceCriteria.map((c) => `  - ${c}`).join('\n')}`
+            : '',
+          taskRef.inputs?.length
+            ? `Upstream Inputs:\n${taskRef.inputs.map((i) => `  - ${i.artifact} from task ${i.fromTaskId}`).join('\n')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : '';
+
+    const relevantFilesSection = handoff?.projectContext?.relevantFiles?.length
+      ? `Existing Project Files (for context):\n${handoff.projectContext.relevantFiles
+          .map((f) => `--- ${f.path} ---\n${f.content}`)
+          .join('\n\n')}`
+      : '';
+
     const userMessage = `Implement the following user story based on the architecture:
 
 Story: ${story.title}
 Description: ${story.description}
 Tech Stack: ${techStack}
 
-Acceptance Criteria:
+${taskContextSection ? `${taskContextSection}\n` : ''}Acceptance Criteria:
 ${acceptanceCriteria}
 
 Architecture Decision Record:
 ${adrContent}
 
-${diagramContent ? `System Diagram:\n${diagramContent}` : ''}
-
+${diagramContent ? `System Diagram:\n${diagramContent}\n` : ''}${relevantFilesSection ? `${relevantFilesSection}\n` : ''}
 Generate source files and unit tests that implement the AC. Return JSON with files array, testCommand, and summary.`;
 
     const rawResponse = await this.callClaude({
@@ -303,7 +330,18 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
       }
 
       if (enforcementReport.status === 'fail') {
-        this.logActivity(`Architecture enforcement loop exhausted after ${enforcementFixAttempts} attempt(s) — passing violations to QA`);
+        this.logActivity(`Architecture enforcement loop exhausted after ${enforcementFixAttempts} attempt(s) — blocking task`);
+        return this.buildHandoff(
+          inReviewStory,
+          AgentPersona.QA_ENGINEER,
+          {
+            enforcementBlocked: 'true',
+            enforcementFixAttempts: String(enforcementFixAttempts),
+            ...(enforcementReport ? { enforcementReport: JSON.stringify(enforcementReport) } : {}),
+          },
+          'Architecture enforcement failed — task is blocked',
+          []
+        );
       } else if (enforcementFixAttempts > 0) {
         this.logActivity(`Architecture enforcement fix succeeded after ${enforcementFixAttempts} attempt(s)`);
       }

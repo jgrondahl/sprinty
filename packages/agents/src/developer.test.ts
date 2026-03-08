@@ -18,6 +18,7 @@ import {
   type HandoffDocument,
   type WorkspaceState,
   type LlmClient,
+  type LlmRequest,
   type SandboxResult,
   ArchitectureEnforcer,
   type EnforcementReport,
@@ -938,7 +939,7 @@ describe('DeveloperAgent — architecture enforcement', () => {
     expect(parsed.status).toBe('fail');
   });
 
-  it('enforcement runs before sandbox and sandbox still runs after enforcement exhaustion', async () => {
+  it('enforcement blocks sandbox when fix loop is exhausted', async () => {
     const sandbox = new MockSandbox({
       executeResults: [
         makeSuccessResult('npm install'),
@@ -957,9 +958,9 @@ describe('DeveloperAgent — architecture enforcement', () => {
 
     const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
     const execCalls = sandbox.getExecuteCalls();
-    expect(execCalls.length).toBe(3);
-    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBe('3');
-    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeDefined();
+    expect(execCalls.length).toBe(0);
+    expect(handoff.stateOfWorld['enforcementBlocked']).toBe('true');
+    expect(handoff.stateOfWorld['enforcementReport']).toBeDefined();
   });
 });
 
@@ -1049,5 +1050,155 @@ describe('DeveloperAgent — rework with diffs', () => {
 
     const content = wsMgr.readFile(ws, 'artifacts/src/auth/service.ts');
     expect(content).toBe('export function login(): string { return "full-new"; }');
+  });
+});
+
+// ─── Task Context Prompt Injection (Gap 3) ──────────────────────────────────
+
+function makeCapturingClient(response: object): { client: LlmClient; getCapturedMessages: () => LlmRequest[] } {
+  const captured: LlmRequest[] = [];
+  const client: LlmClient = {
+    complete: async (req: LlmRequest) => {
+      captured.push(req);
+      return JSON.stringify(response);
+    },
+  };
+  return { client, getCapturedMessages: () => captured };
+}
+
+describe('DeveloperAgent — task context prompt injection', () => {
+  it('injects task description into LLM user message when handoff has task ref', async () => {
+    const { client, getCapturedMessages } = makeCapturingClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff: HandoffDocument = {
+      ...makeArchitectHandoff(),
+      task: {
+        taskId: 'task-auth-1',
+        module: 'auth',
+        type: 'create',
+        description: 'Implement JWT login endpoint with bcrypt password hashing',
+        targetFiles: ['auth/service.ts', 'auth/controller.ts'],
+        expectedOutputs: ['AuthService', 'LoginController'],
+        acceptanceCriteria: ['Returns signed JWT on valid credentials'],
+        inputs: [{ fromTaskId: 'task-db-1', artifact: 'UserRepository' }],
+      },
+    };
+
+    await agent.execute(handoff, makeInProgressStory());
+
+    const messages = getCapturedMessages();
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+    const userMessage = messages[0]!.userMessage;
+
+    expect(userMessage).toContain('task-auth-1');
+    expect(userMessage).toContain('auth');
+    expect(userMessage).toContain('create');
+    expect(userMessage).toContain('Implement JWT login endpoint with bcrypt password hashing');
+    expect(userMessage).toContain('auth/service.ts');
+    expect(userMessage).toContain('auth/controller.ts');
+    expect(userMessage).toContain('AuthService');
+    expect(userMessage).toContain('LoginController');
+    expect(userMessage).toContain('Returns signed JWT on valid credentials');
+    expect(userMessage).toContain('UserRepository');
+    expect(userMessage).toContain('task-db-1');
+  });
+
+  it('injects relevant files section into LLM user message when projectContext has files', async () => {
+    const { client, getCapturedMessages } = makeCapturingClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff: HandoffDocument = {
+      ...makeArchitectHandoff(),
+      projectContext: {
+        projectId: 'proj-1',
+        relevantFiles: [
+          { path: 'src/db/user-repository.ts', content: 'export class UserRepository { find() {} }' },
+          { path: 'src/config/env.ts', content: 'export const JWT_SECRET = process.env.JWT_SECRET;' },
+        ],
+      },
+    };
+
+    await agent.execute(handoff, makeInProgressStory());
+
+    const messages = getCapturedMessages();
+    const userMessage = messages[0]!.userMessage;
+
+    expect(userMessage).toContain('Existing Project Files (for context):');
+    expect(userMessage).toContain('--- src/db/user-repository.ts ---');
+    expect(userMessage).toContain('export class UserRepository');
+    expect(userMessage).toContain('--- src/config/env.ts ---');
+    expect(userMessage).toContain('JWT_SECRET');
+  });
+
+  it('does not inject task context section when handoff has no task ref', async () => {
+    const { client, getCapturedMessages } = makeCapturingClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    const messages = getCapturedMessages();
+    const userMessage = messages[0]!.userMessage;
+
+    expect(userMessage).not.toContain('Task:');
+    expect(userMessage).not.toContain('Task Description:');
+    expect(userMessage).not.toContain('Target Files:');
+    expect(userMessage).not.toContain('Expected Outputs:');
+    expect(userMessage).not.toContain('Task Acceptance Criteria:');
+    expect(userMessage).not.toContain('Upstream Inputs:');
+  });
+
+  it('does not inject relevant files section when projectContext is absent', async () => {
+    const { client, getCapturedMessages } = makeCapturingClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+
+    const messages = getCapturedMessages();
+    const userMessage = messages[0]!.userMessage;
+
+    expect(userMessage).not.toContain('Existing Project Files (for context):');
+  });
+
+  it('injects only populated optional task fields and omits empty ones', async () => {
+    const { client, getCapturedMessages } = makeCapturingClient(validDevResponse);
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff: HandoffDocument = {
+      ...makeArchitectHandoff(),
+      task: {
+        taskId: 'task-minimal',
+        module: 'auth',
+        type: 'extend',
+      },
+    };
+
+    await agent.execute(handoff, makeInProgressStory());
+
+    const messages = getCapturedMessages();
+    const userMessage = messages[0]!.userMessage;
+
+    expect(userMessage).toContain('task-minimal');
+    expect(userMessage).toContain('extend');
+    expect(userMessage).not.toContain('Task Description:');
+    expect(userMessage).not.toContain('Target Files:');
+    expect(userMessage).not.toContain('Expected Outputs:');
+    expect(userMessage).not.toContain('Task Acceptance Criteria:');
+    expect(userMessage).not.toContain('Upstream Inputs:');
   });
 });
