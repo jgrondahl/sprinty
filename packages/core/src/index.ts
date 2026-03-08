@@ -11,3 +11,4 @@ export * from './resume';
 export * from './architecture-plan';
 export * from './plan-validation';
 export * from './task-decomposition';
+export * from './architecture-enforcer';
