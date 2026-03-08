@@ -6,3 +6,5 @@ export * from './ledger';
 export * from './llm-client';
 export * from './sandbox';
 export * from './sandbox-mock';
+export * from './diff';
+export * from './resume';
