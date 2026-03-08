@@ -72,6 +72,7 @@ export class GitHubConnector {
       title: issue.title,
       description: issue.body ?? '',
       acceptanceCriteria: [],
+      dependsOn: [],
       state: StoryState.RAW,
       source: StorySource.GITHUB,
       sourceId: String(issue.number),

@@ -67,6 +67,25 @@ describe('FileConnector — Markdown', () => {
     const stories = connector.parse(p);
     expect(stories[0]!.sourceId).toMatch(/^[0-9a-f]{12}$/);
   });
+
+  it('parses Depends On metadata from markdown', () => {
+    const p = write(
+      'depends-on.md',
+      `## Story: Auth\nDepends On: story-001, story-002\n### Acceptance Criteria\n- can login\n`
+    );
+
+    const stories = connector.parse(p);
+    expect(stories.length).toBe(1);
+    expect(stories[0]!.dependsOn).toEqual(['story-001', 'story-002']);
+  });
+
+  it('defaults dependsOn to empty array when missing in markdown', () => {
+    const p = write('depends-on-default.md', `## Story: Auth\nDescription\n`);
+
+    const stories = connector.parse(p);
+    expect(stories.length).toBe(1);
+    expect(stories[0]!.dependsOn).toEqual([]);
+  });
 });
 
 // ─── JSON ─────────────────────────────────────────────────────────────────────

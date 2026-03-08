@@ -91,6 +91,7 @@ export class JiraConnector {
       title: issue.fields.summary,
       description,
       acceptanceCriteria: [],
+      dependsOn: [],
       state: StoryState.RAW,
       source: StorySource.JIRA,
       sourceId: issue.key,

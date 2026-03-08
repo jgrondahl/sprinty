@@ -25,6 +25,7 @@ interface RawMarkdownStory {
   title: string;
   description: string;
   acceptanceCriteria: string[];
+  dependsOn: string[];
 }
 
 /**
@@ -45,14 +46,20 @@ function parseMarkdownStories(content: string): RawMarkdownStory[] {
   for (const line of lines) {
     const storyHeading = line.match(/^##\s+(?:Story:\s+)?(.+)/i);
     const acHeading = line.match(/^###\s+(Acceptance Criteria|AC)/i);
+    const dependsOnLine = line.match(/^Depends On:\s*(.+)/i);
     const bulletLine = line.match(/^[-*]\s+(.+)/);
 
     if (storyHeading) {
       if (current) stories.push(current);
-      current = { title: storyHeading[1]!.trim(), description: '', acceptanceCriteria: [] };
+      current = { title: storyHeading[1]!.trim(), description: '', acceptanceCriteria: [], dependsOn: [] };
       inAC = false;
     } else if (acHeading && current) {
       inAC = true;
+    } else if (dependsOnLine && current && !inAC) {
+      current.dependsOn = dependsOnLine[1]!
+        .split(',')
+        .map((storyId) => storyId.trim())
+        .filter((storyId) => storyId.length > 0);
     } else if (bulletLine && current && inAC) {
       current.acceptanceCriteria.push(bulletLine[1]!.trim());
     } else if (current && !inAC && line.trim()) {
@@ -126,6 +133,7 @@ export class FileConnector {
         workspacePath: '',
         domain: 'general',
         tags: [],
+        dependsOn: raw.dependsOn ?? [],
         createdAt: now,
         updatedAt: now,
       })
