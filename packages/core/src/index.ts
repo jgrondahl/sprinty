@@ -13,3 +13,4 @@ export * from './plan-revision';
 export * from './plan-validation';
 export * from './task-decomposition';
 export * from './architecture-enforcer';
+export * from './sprint-state';

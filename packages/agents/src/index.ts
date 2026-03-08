@@ -18,6 +18,6 @@ export { QAEngineerAgent } from './qa-engineer';
 export type { QAVerdict } from './qa-engineer';
 export { TechnicalWriterAgent } from './technical-writer';
 export type { TechnicalWriterResponse } from './technical-writer';
-export { SprintOrchestrator } from './orchestrator';
+export { SprintOrchestrator, executeRevisionLoop } from './orchestrator';
 export type { OrchestratorConfig } from './orchestrator';
 export { AnthropicClient, GitHubCopilotClient } from './providers';
