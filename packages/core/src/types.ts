@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  ArchitecturePlanRefSchema,
+  SprintTaskPlanRefSchema,
+  ImplementationTaskRefSchema,
+} from './architecture-plan';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +61,9 @@ export const HandoffDocumentSchema = z.object({
   storyId: z.string().min(1),
   status: z.string().min(1),
   stateOfWorld: z.record(z.string(), z.string()),
+  architecturePlan: ArchitecturePlanRefSchema.optional(),
+  sprintTaskPlan: SprintTaskPlanRefSchema.optional(),
+  task: ImplementationTaskRefSchema.optional(),
   nextGoal: z.string().min(1),
   artifacts: z.array(z.string()).default([]),
   timestamp: z.string().datetime(),

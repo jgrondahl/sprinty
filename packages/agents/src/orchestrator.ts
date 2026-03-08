@@ -30,6 +30,8 @@ import {
 
 export interface OrchestratorConfig {
   projectId: string;
+  /** Pipeline execution mode. 'story' = existing per-story pipeline. 'planned-sprint' = architecture-first multi-story pipeline. */
+  executionMode?: 'story' | 'planned-sprint';
   workspaceBaseDir?: string;
   /**
    * Default LLM client used by all agents that don't have a persona-specific
