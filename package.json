@@ -10,13 +10,15 @@
     "splinty": "bun packages/cli/src/index.ts"
   },
   "dependencies": {
-    "@mastra/core": "^0.10.0",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@mastra/core": "^0.10.0",
     "@octokit/rest": "^21.0.0",
+    "@types/dockerode": "^4.0.1",
     "@types/js-yaml": "^4.0.9",
-    "zod": "^3.23.0",
+    "dockerode": "^4.0.9",
+    "js-yaml": "^4.1.0",
     "simple-git": "^3.27.0",
-    "js-yaml": "^4.1.0"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
