@@ -19,6 +19,10 @@ import {
   type WorkspaceState,
   type LlmClient,
   type SandboxResult,
+  ArchitectureEnforcer,
+  type EnforcementReport,
+  type ArchitecturePlan,
+  type ImplementationTask,
 } from '@splinty/core';
 
 const now = new Date().toISOString();
@@ -113,6 +117,119 @@ function makeMultiCallClient(responses: Array<object | Error>): LlmClient {
       if (response instanceof Error) throw response;
       return JSON.stringify(response);
     },
+  };
+}
+
+function makeTestPlan(): ArchitecturePlan {
+  return {
+    planId: 'plan-1',
+    schemaVersion: 1,
+    projectId: 'test-proj',
+    level: 'sprint',
+    scopeKey: 'sprint:sprint-1',
+    sprintId: 'sprint-1',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    revisionNumber: 0,
+    techStack: {
+      language: 'TypeScript',
+      runtime: 'Node.js',
+      framework: 'express',
+      testFramework: 'bun:test',
+      buildTool: 'tsc',
+      rationale: 'Standard stack',
+    },
+    modules: [
+      {
+        name: 'auth',
+        description: 'Authentication module',
+        responsibility: 'Handle user auth',
+        directory: 'auth',
+        exposedInterfaces: ['AuthService', 'login'],
+        dependencies: [],
+        owningStories: ['story-dev'],
+      },
+    ],
+    storyModuleMapping: [{ storyId: 'story-dev', modules: ['auth'], primaryModule: 'auth', estimatedFiles: ['auth/service.ts'] }],
+    executionOrder: [{ groupId: 1, storyIds: ['story-dev'], rationale: 'Single story', dependsOn: [] }],
+    decisions: [],
+    constraints: [],
+  };
+}
+
+function makeTestTask(): ImplementationTask {
+  return {
+    taskId: 'task-1',
+    storyIds: ['story-dev'],
+    module: 'auth',
+    type: 'create',
+    description: 'Implement auth service',
+    targetFiles: ['auth/service.ts', 'auth/service.test.ts'],
+    ownedFiles: ['auth/service.ts', 'auth/service.test.ts'],
+    dependencies: [],
+    inputs: [],
+    expectedOutputs: ['AuthService'],
+    acceptanceCriteria: ['Login returns JWT'],
+  };
+}
+
+function makeMockEnforcer(reports: EnforcementReport[]): ArchitectureEnforcer {
+  let callIndex = 0;
+  const enforcer = new ArchitectureEnforcer();
+  enforcer.validate = () => {
+    const report = reports[callIndex] ?? reports[reports.length - 1]!;
+    callIndex++;
+    return report;
+  };
+  return enforcer;
+}
+
+function makePassReport(): EnforcementReport {
+  return {
+    taskId: 'task-1',
+    planId: 'plan-1',
+    timestamp: new Date().toISOString(),
+    status: 'pass',
+    violations: [],
+    metrics: { totalConstraints: 3, satisfied: 3, violated: 0, warnings: 0 },
+  };
+}
+
+function makeFailReport(): EnforcementReport {
+  return {
+    taskId: 'task-1',
+    planId: 'plan-1',
+    timestamp: new Date().toISOString(),
+    status: 'fail',
+    violations: [
+      {
+        constraintId: 'file-ownership-task-1',
+        severity: 'error',
+        file: 'auth/service.ts',
+        description: "Task 'task-1' modified file outside ownership boundary.",
+        suggestion: 'Restrict changes to owned files.',
+      },
+    ],
+    metrics: { totalConstraints: 3, satisfied: 2, violated: 1, warnings: 0 },
+  };
+}
+
+function makeWarnReport(): EnforcementReport {
+  return {
+    taskId: 'task-1',
+    planId: 'plan-1',
+    timestamp: new Date().toISOString(),
+    status: 'warn',
+    violations: [
+      {
+        constraintId: 'required-export-auth-AuthService',
+        severity: 'warning',
+        file: 'auth',
+        description: "Exposed interface 'AuthService' is not exported by module 'auth'.",
+        suggestion: "Export 'AuthService' from auth module.",
+      },
+    ],
+    metrics: { totalConstraints: 3, satisfied: 2, violated: 0, warnings: 1 },
   };
 }
 
@@ -718,6 +835,131 @@ describe('DeveloperAgent — sandbox integration', () => {
     const initCall = sandbox.calls.find((c) => c.method === 'init');
     expect(initCall).toBeDefined();
     expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
+  });
+});
+
+describe('DeveloperAgent — architecture enforcement', () => {
+  it('skips enforcement when no enforcer is set', async () => {
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementReport']).toBeUndefined();
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBeUndefined();
+  });
+
+  it('passes enforcement report in handoff when enforcer is set and passes', async () => {
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setEnforcer(makeMockEnforcer([makePassReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementReport']).toBeDefined();
+    const parsed = JSON.parse(handoff.stateOfWorld['enforcementReport']!) as EnforcementReport;
+    expect(parsed.status).toBe('pass');
+  });
+
+  it('runs architecture fix when enforcer fails, then passes on retry', async () => {
+    const gitCalls: GitCall[] = [];
+    const fixResponse = {
+      files: validDevResponse.files,
+      summary: 'Fixed architecture boundary violations',
+    };
+    const client = makeMultiCallClient([validDevResponse, fixResponse]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setEnforcer(makeMockEnforcer([makeFailReport(), makePassReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBe('1');
+    const parsed = JSON.parse(handoff.stateOfWorld['enforcementReport']!) as EnforcementReport;
+    expect(parsed.status).toBe('pass');
+  });
+
+  it('exhausts max architecture fix attempts and passes failures to QA', async () => {
+    const gitCalls: GitCall[] = [];
+    const fixResponse = { files: validDevResponse.files, summary: 'Tried architecture fix' };
+    const client = makeMultiCallClient([validDevResponse, fixResponse, fixResponse, fixResponse]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setEnforcer(makeMockEnforcer([makeFailReport(), makeFailReport(), makeFailReport(), makeFailReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBe('3');
+    const parsed = JSON.parse(handoff.stateOfWorld['enforcementReport']!) as EnforcementReport;
+    expect(parsed.status).toBe('fail');
+  });
+
+  it('proceeds to sandbox after enforcement passes', async () => {
+    const sandbox = new MockSandbox();
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+    agent.setEnforcer(makeMockEnforcer([makePassReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementReport']).toBeDefined();
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeDefined();
+  });
+
+  it('enforcement warnings pass through to QA without triggering fix loop', async () => {
+    const gitCalls: GitCall[] = [];
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, makeMockClient(validDevResponse));
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setEnforcer(makeMockEnforcer([makeWarnReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    const parsed = JSON.parse(handoff.stateOfWorld['enforcementReport']!) as EnforcementReport;
+    expect(parsed.status).toBe('warn');
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBeUndefined();
+  });
+
+  it('stops fix loop when architecture fix LLM returns empty files', async () => {
+    const gitCalls: GitCall[] = [];
+    const emptyFixResponse = { files: [], summary: 'No fix available' };
+    const client = makeMultiCallClient([validDevResponse, emptyFixResponse]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setEnforcer(makeMockEnforcer([makeFailReport(), makeFailReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBe('1');
+    const parsed = JSON.parse(handoff.stateOfWorld['enforcementReport']!) as EnforcementReport;
+    expect(parsed.status).toBe('fail');
+  });
+
+  it('enforcement runs before sandbox and sandbox still runs after enforcement exhaustion', async () => {
+    const sandbox = new MockSandbox({
+      executeResults: [
+        makeSuccessResult('npm install'),
+        makeSuccessResult('npm run build'),
+        makeSuccessResult('npm test'),
+      ],
+    });
+    const gitCalls: GitCall[] = [];
+    const fixResponse = { files: validDevResponse.files, summary: 'Tried architecture fix' };
+    const client = makeMultiCallClient([validDevResponse, fixResponse, fixResponse, fixResponse]);
+    const agent = new DeveloperAgent(agentConfig, wsMgr, handoffMgr, client);
+    agent.setWorkspace(ws);
+    agent.setGitFactory(makeMockGit(gitCalls));
+    agent.setSandbox(sandbox);
+    agent.setEnforcer(makeMockEnforcer([makeFailReport(), makeFailReport(), makeFailReport(), makeFailReport()]), makeTestPlan(), makeTestTask());
+
+    const handoff = await agent.execute(makeArchitectHandoff(), makeInProgressStory());
+    const execCalls = sandbox.getExecuteCalls();
+    expect(execCalls.length).toBe(3);
+    expect(handoff.stateOfWorld['enforcementFixAttempts']).toBe('3');
+    expect(handoff.stateOfWorld['sandboxBuildResult']).toBeDefined();
   });
 });
 

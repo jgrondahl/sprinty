@@ -2,7 +2,12 @@ import * as path from 'path';
 import simpleGit, { type SimpleGit } from 'simple-git';
 import {
   AgentPersona,
+  ArchitectureEnforcer,
+  type ArchitecturePlan,
+  type ArchitectureViolation,
   DiffManager,
+  type EnforcementReport,
+  type ImplementationTask,
   StoryState,
   type DiffResult,
   type HandoffDocument,
@@ -45,6 +50,22 @@ Respond ONLY with a valid JSON object:
   "summary": "string — brief description of what was fixed"
 }`;
 
+const ARCHITECTURE_FIX_SYSTEM_PROMPT = `You are a Senior Full-Stack Developer fixing architecture violations.
+You will receive: the current source files, the architecture violations, and the task context.
+
+Fix ONLY the architectural issues — do not refactor unrelated code. Common fixes:
+- Import boundary violations: import from module root/public API instead of internal paths
+- File ownership violations: move logic to files owned by this task
+- Missing exports: ensure required interfaces are exported
+
+Respond ONLY with a valid JSON object:
+{
+  "files": [
+    { "path": "string — relative path from src/", "content": "string — full file content" }
+  ],
+  "summary": "string — brief description of what was fixed"
+}`;
+
 const MAX_FIX_ATTEMPTS = 3;
 
 // Injected git factory type — allows tests to inject mock git
@@ -74,6 +95,9 @@ export class DeveloperAgent extends BaseAgent {
   private gitFactory: GitFactory;
   private sandbox: SandboxEnvironment | null = null;
   private sandboxConfig: SandboxConfig | null = null;
+  private enforcer: ArchitectureEnforcer | null = null;
+  private enforcerPlan: ArchitecturePlan | null = null;
+  private enforcerTask: ImplementationTask | null = null;
 
   constructor(
     ...args: ConstructorParameters<typeof BaseAgent>
@@ -91,6 +115,13 @@ export class DeveloperAgent extends BaseAgent {
   setSandbox(sandbox: SandboxEnvironment, config?: SandboxConfig): void {
     this.sandbox = sandbox;
     this.sandboxConfig = config ?? null;
+  }
+
+  /** Inject an architecture enforcer for plan-based enforcement before sandbox */
+  setEnforcer(enforcer: ArchitectureEnforcer, plan: ArchitecturePlan, task: ImplementationTask): void {
+    this.enforcer = enforcer;
+    this.enforcerPlan = plan;
+    this.enforcerTask = task;
   }
 
   async execute(
@@ -224,10 +255,63 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
       this.logActivity(`Generated ${generatedFiles.length} source file(s): ${generatedFiles.join(', ')}`);
     }
 
+    let currentFiles = parsed.files;
+    const buildFileContentsMap = (files: Array<{ path: string; content: string }>): Map<string, string> => {
+      const map = new Map<string, string>();
+      for (const file of files) {
+        map.set(file.path, file.content);
+      }
+      return map;
+    };
+
+    // ── Architecture Enforcement ──────────────────────────────────────────────
+    let enforcementReport: EnforcementReport | null = null;
+    let enforcementFixAttempts = 0;
+
+    if (this.enforcer && this.enforcerPlan && this.enforcerTask && currentFiles.length > 0) {
+      enforcementReport = this.enforcer.validate(
+        buildFileContentsMap(currentFiles),
+        this.enforcerPlan,
+        this.enforcerTask
+      );
+
+      while (enforcementReport.status === 'fail' && enforcementFixAttempts < MAX_FIX_ATTEMPTS) {
+        enforcementFixAttempts++;
+        this.logActivity(
+          `Architecture enforcement failed (${enforcementReport.metrics.violated} error(s)) — fix attempt ${enforcementFixAttempts}/${MAX_FIX_ATTEMPTS}`
+        );
+
+        const fixedFiles = await this.requestArchitectureFix(currentFiles, enforcementReport);
+        if (!fixedFiles) {
+          this.logActivity(`Architecture fix attempt ${enforcementFixAttempts}: LLM returned no usable fix — stopping`);
+          break;
+        }
+
+        currentFiles = fixedFiles;
+        if (this.currentWorkspace) {
+          for (const file of currentFiles) {
+            const relPath = `artifacts/src/${file.path}`;
+            this.workspaceManager.writeFile(this.currentWorkspace, relPath, file.content);
+          }
+        }
+
+        enforcementReport = this.enforcer.validate(
+          buildFileContentsMap(currentFiles),
+          this.enforcerPlan,
+          this.enforcerTask
+        );
+      }
+
+      if (enforcementReport.status === 'fail') {
+        this.logActivity(`Architecture enforcement loop exhausted after ${enforcementFixAttempts} attempt(s) — passing violations to QA`);
+      } else if (enforcementFixAttempts > 0) {
+        this.logActivity(`Architecture enforcement fix succeeded after ${enforcementFixAttempts} attempt(s)`);
+      }
+    }
+
     // ── Sandbox: compile→test→fix loop ────────────────────────────────────────
     let sandboxResults: SandboxStepResult = { install: null, build: null, test: null };
     let fixAttempts = 0;
-    let currentFiles = parsed.files;
     const resourceViolationCounts = new Map<string, number>();
 
     if (this.sandbox && currentFiles.length > 0) {
@@ -258,6 +342,15 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
         }
 
         sandboxResults = await this.runSandbox(currentFiles, techStack);
+
+        if (this.enforcer && this.enforcerPlan && this.enforcerTask) {
+          enforcementReport = this.enforcer.validate(
+            buildFileContentsMap(currentFiles),
+            this.enforcerPlan,
+            this.enforcerTask
+          );
+        }
+
         failingStep = this.findFailingStep(sandboxResults);
       }
 
@@ -324,6 +417,8 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
         summary: parsed.summary ?? '',
         ...this.serializeSandboxResults(sandboxResults),
         ...(fixAttempts > 0 ? { fixAttempts: String(fixAttempts) } : {}),
+        ...(enforcementReport ? { enforcementReport: JSON.stringify(enforcementReport) } : {}),
+        ...(enforcementFixAttempts > 0 ? { enforcementFixAttempts: String(enforcementFixAttempts) } : {}),
         ...(constraintRevisions.length > 0
           ? { sandboxConstraintRevision: constraintRevisions.join(',') }
           : {}),
@@ -440,6 +535,58 @@ Fix the code so "${failingResult.command}" succeeds. Return JSON with the correc
       return parsed.files;
     } catch (err) {
       this.logActivity(`Fix LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  private async requestArchitectureFix(
+    currentFiles: Array<{ path: string; content: string }>,
+    report: EnforcementReport,
+  ): Promise<Array<{ path: string; content: string }> | null> {
+    const filesListing = currentFiles
+      .map((f) => `--- ${f.path} ---\n${f.content}`)
+      .join('\n\n');
+
+    const errorViolations: ArchitectureViolation[] = report.violations
+      .filter((v) => v.severity === 'error');
+
+    const violationsList = errorViolations
+      .map((v) => `[${v.constraintId}] ${v.file}: ${v.description}\n  Suggestion: ${v.suggestion}`)
+      .join('\n\n');
+
+    const userMessage = `The following source files have architecture violations that must be fixed.
+
+Architecture violations (${report.metrics.violated} error(s)):
+${violationsList}
+
+Current source files:
+${filesListing}
+
+Fix the architecture violations. Return JSON with the corrected files array and a summary.`;
+
+    try {
+      const rawResponse = await this.callClaude({
+        systemPrompt: ARCHITECTURE_FIX_SYSTEM_PROMPT,
+        userMessage,
+      });
+
+      const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned) as {
+        files?: Array<{ path: string; content: string }>;
+        summary?: string;
+      };
+
+      if (!parsed.files || !Array.isArray(parsed.files) || parsed.files.length === 0) {
+        return null;
+      }
+
+      if (parsed.summary) {
+        this.logActivity(`Architecture fix: ${parsed.summary}`);
+      }
+
+      return parsed.files;
+    } catch (err) {
+      this.logActivity(`Architecture fix LLM call failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }
