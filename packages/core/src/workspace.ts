@@ -246,6 +246,47 @@ export class WorkspaceManager {
     return Object.keys(ws.files);
   }
 
+  getServiceWorkspacePath(projectId: string, serviceName: string): string {
+    return path.join(this.baseDir, projectId, 'services', serviceName);
+  }
+
+  createServiceWorkspace(projectId: string, serviceName: string): WorkspaceState {
+    const basePath = this.getServiceWorkspacePath(projectId, serviceName);
+
+    const dirs = [
+      basePath,
+      path.join(basePath, 'handoffs'),
+      path.join(basePath, 'artifacts'),
+      path.join(basePath, 'src'),
+    ];
+
+    for (const dir of dirs) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const agentLog = path.join(basePath, 'agent.log');
+    const errorsLog = path.join(basePath, 'errors.log');
+    if (!fs.existsSync(agentLog)) fs.writeFileSync(agentLog, '');
+    if (!fs.existsSync(errorsLog)) fs.writeFileSync(errorsLog, '');
+
+    return {
+      projectId,
+      storyId: `service:${serviceName}`,
+      basePath,
+      files: {},
+      agentsLog: [],
+    };
+  }
+
+  listServiceNames(projectId: string): string[] {
+    const servicesDir = path.join(this.baseDir, projectId, 'services');
+    if (!fs.existsSync(servicesDir)) return [];
+    return fs
+      .readdirSync(servicesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  }
+
   /**
    * Appends a timestamped log entry to `agent.log` inside the workspace.
    */
