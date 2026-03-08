@@ -4,6 +4,7 @@ import {
   SprintTaskPlanRefSchema,
   ImplementationTaskRefSchema,
 } from './architecture-plan';
+import { ProjectContextSchema } from './project-memory';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export const StorySchema = z.object({
   storyPoints: z.number().int().positive().optional(),
   domain: z.string().default('general'),
   tags: z.array(z.string()).default([]),
+  dependsOn: z.array(z.string()).default([]),
   workspacePath: z.string(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -65,6 +67,7 @@ export const HandoffDocumentSchema = z.object({
   architecturePlan: ArchitecturePlanRefSchema.optional(),
   sprintTaskPlan: SprintTaskPlanRefSchema.optional(),
   task: ImplementationTaskRefSchema.optional(),
+  projectContext: ProjectContextSchema.optional(),
   nextGoal: z.string().min(1),
   artifacts: z.array(z.string()).default([]),
   timestamp: z.string().datetime(),

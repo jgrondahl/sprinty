@@ -54,6 +54,19 @@ describe('StorySchema', () => {
     expect(result.sourceId).toBe('JIRA-123');
   });
 
+  it('accepts dependsOn when provided', () => {
+    const result = StorySchema.parse({
+      ...validStory,
+      dependsOn: ['story-1'],
+    });
+    expect(result.dependsOn).toEqual(['story-1']);
+  });
+
+  it('defaults dependsOn to empty array', () => {
+    const result = StorySchema.parse(validStory);
+    expect(result.dependsOn).toEqual([]);
+  });
+
   it('rejects invalid state enum', () => {
     expect(() =>
       StorySchema.parse({ ...validStory, state: 'INVALID_STATE' })
@@ -89,6 +102,70 @@ describe('HandoffDocumentSchema', () => {
     const { artifacts: _a, ...noArtifacts } = validHandoff;
     const result = HandoffDocumentSchema.parse(noArtifacts);
     expect(result.artifacts).toEqual([]);
+  });
+
+  it('accepts optional projectContext', () => {
+    const result = HandoffDocumentSchema.parse({
+      ...validHandoff,
+      projectContext: {
+        memory: {
+          projectId: 'proj-001',
+          createdAt: now,
+          updatedAt: now,
+          stack: {
+            language: 'TypeScript',
+            runtime: 'Bun',
+          },
+          stories: [
+            {
+              storyId: 'story-001',
+              title: 'As a user I want to log in',
+              completedAt: now,
+              filesCreated: ['src/auth.ts'],
+              filesModified: ['src/app.ts'],
+              keyExports: ['authenticate'],
+              dependencies: ['zod'],
+              commands: {
+                build: 'bunx tsc --noEmit',
+                test: 'bun test',
+              },
+              testStatus: 'pass',
+              architectureDecisions: ['Use stateless auth checks'],
+            },
+          ],
+          sharedDecisions: ['Use zod schemas'],
+          knownConstraints: ['Keep schemas typed'],
+          fileIndex: [
+            {
+              path: 'src/auth.ts',
+              createdBy: 'story-001',
+              lastModifiedBy: 'story-001',
+              exports: ['authenticate'],
+              description: 'Auth service entry',
+            },
+          ],
+          artifactIndex: [
+            {
+              type: 'architecture-plan',
+              id: 'artifact-001',
+              path: 'artifacts/architecture-plan-001.json',
+              createdAt: now,
+              relatedStories: ['story-001'],
+            },
+          ],
+        },
+        relevantFiles: [
+          {
+            path: 'src/auth.ts',
+            content: 'export const authenticate = () => true;',
+          },
+        ],
+        dependencyGraph: ['story-000'],
+      },
+    });
+
+    expect(result.projectContext?.memory.projectId).toBe('proj-001');
+    expect(result.projectContext?.relevantFiles).toHaveLength(1);
   });
 });
 
