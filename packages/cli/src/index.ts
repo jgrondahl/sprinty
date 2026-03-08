@@ -50,6 +50,13 @@ function parseArgs(argv: string[]): { command: string; flags: Record<string, str
   for (let i = 1; i < userArgs.length; i++) {
     const arg = userArgs[i]!;
     if (arg.startsWith('--')) {
+      const eqIndex = arg.indexOf('=');
+      if (eqIndex > 2) {
+        const key = arg.slice(2, eqIndex);
+        const value = arg.slice(eqIndex + 1);
+        flags[key] = value;
+        continue;
+      }
       const key = arg.slice(2);
       const value = userArgs[i + 1] && !userArgs[i + 1]!.startsWith('--')
         ? userArgs[++i]!
@@ -261,6 +268,53 @@ export function cmdStatus(flags: Record<string, string>): number {
   return 0;
 }
 
+export function cmdExport(flags: Record<string, string>): number {
+  const format = flags['format'] ?? 'json';
+  const sprintId = flags['sprint'];
+  const project = flags['project'] ?? 'default';
+
+  if (format !== 'json') {
+    console.error(red(`Error: unsupported --format "${format}". Only json is supported.`));
+    return 2;
+  }
+
+  if (!sprintId) {
+    console.error(red('Error: --sprint is required'));
+    console.error('  Usage: splinty export --format=json --sprint=<id> [--project <id>]');
+    return 2;
+  }
+
+  const telemetryDir = path.join(workspaceBaseDir(), project, 'stories', 'sprint', 'artifacts', 'telemetry');
+  if (!fs.existsSync(telemetryDir)) {
+    console.error(red(`Error: telemetry directory not found: ${telemetryDir}`));
+    return 1;
+  }
+
+  const prefix = `sprint-${sprintId}-`;
+  const matchingFiles = fs
+    .readdirSync(telemetryDir)
+    .filter((fileName) => fileName.startsWith(prefix) && fileName.endsWith('.json'))
+    .sort();
+
+  if (matchingFiles.length === 0) {
+    console.error(red(`Error: no telemetry files found for sprint ${sprintId}`));
+    return 1;
+  }
+
+  if (matchingFiles.length === 1) {
+    const filePath = path.join(telemetryDir, matchingFiles[0]!);
+    process.stdout.write(fs.readFileSync(filePath, 'utf-8'));
+    return 0;
+  }
+
+  const payload = matchingFiles.map((fileName) => {
+    const filePath = path.join(telemetryDir, fileName);
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  });
+  process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  return 0;
+}
+
 /**
  * splinty auth [--force] [--logout]
  *
@@ -301,6 +355,7 @@ USAGE
 
 COMMANDS
   auth    Authenticate with GitHub Copilot (device flow)
+  export  Export sprint telemetry artifacts
   init    Create a new project workspace
   run     Load stories and run the full pipeline
   status  Print the current sprint board
@@ -345,11 +400,20 @@ STATUS
   Options:
     --project <id>    Project ID (default: "default")
 
+EXPORT
+  splinty export --format=json --sprint=<id> [--project <id>]
+
+  Options:
+    --format json     Output format (only json currently supported)
+    --sprint <id>     Sprint ID to export (required)
+    --project <id>    Project ID (default: "default")
+
 EXAMPLES
   splinty init --name my-app
   splinty run --source file --input stories/sprint1.md --project my-app
   splinty run --source github --input owner/my-repo --project my-app
   splinty status --project my-app
+  splinty export --format=json --sprint=sprint-1736362052203 --project my-app
 
 EXIT CODES
   0  All stories succeeded
@@ -374,6 +438,8 @@ async function main(): Promise<void> {
     exitCode = await cmdRun(flags);
   } else if (command === 'status') {
     exitCode = cmdStatus(flags);
+  } else if (command === 'export') {
+    exitCode = cmdExport(flags);
   } else if (command === '--help' || command === 'help' || command === '-h') {
     exitCode = cmdHelp();
   } else {
