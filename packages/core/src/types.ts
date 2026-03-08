@@ -92,6 +92,17 @@ export const WorkspaceStateSchema = z.object({
   agentsLog: z.array(z.string()).default([]),
 });
 
+export const ArchitectureMetricsSchema = z.object({
+  planId: z.string().min(1),
+  revisionCount: z.number().int().min(0),
+  boundaryViolations: z.number().int().min(0),
+  dependencyViolations: z.number().int().min(0),
+  namingViolations: z.number().int().min(0),
+  patternViolations: z.number().int().min(0),
+  constraintsSatisfied: z.number().int().min(0),
+  constraintsTotal: z.number().int().min(0),
+});
+
 export const StoryMetricsSchema = z.object({
   storyId: z.string().min(1),
   totalDurationMs: z.number().int().min(0),
@@ -106,6 +117,7 @@ export const StoryMetricsSchema = z.object({
   costEstimateUsd: z.number().min(0),
   agentDurationsMs: z.record(z.string(), z.number().int().min(0)).default({}),
   traceId: z.string().min(1),
+  architectureMetrics: ArchitectureMetricsSchema.optional(),
 });
 
 export const AppBuilderResultSchema = z.object({
@@ -122,6 +134,28 @@ export const AppBuilderResultSchema = z.object({
   metrics: StoryMetricsSchema.optional(),
 });
 
+export const ExecutionMetricsSchema = z.object({
+  totalTasks: z.number().int().min(0),
+  completedTasks: z.number().int().min(0),
+  failedTasks: z.number().int().min(0),
+  blockedTasks: z.number().int().min(0),
+  totalRetries: z.number().int().min(0),
+  architectureRevisions: z.number().int().min(0),
+  averageTaskDurationMs: z.number().min(0),
+  totalDurationMs: z.number().int().min(0),
+});
+
+export const AggregateSandboxTelemetrySchema = z.object({
+  totalRuns: z.number().int().min(0),
+  successfulRuns: z.number().int().min(0),
+  failedRuns: z.number().int().min(0),
+  resourceLimitViolations: z.number().int().min(0),
+  peakCpuPercent: z.number().min(0),
+  peakMemoryMb: z.number().min(0),
+  totalDiskUsageMb: z.number().min(0),
+  totalSandboxRuntimeMs: z.number().int().min(0),
+});
+
 export const SprintTelemetrySchema = z.object({
   sprintId: z.string().min(1),
   runId: z.string().min(1),
@@ -131,6 +165,8 @@ export const SprintTelemetrySchema = z.object({
   totalDurationMs: z.number().int().min(0),
   totalLlmCalls: z.number().int().min(0),
   totalCostEstimateUsd: z.number().min(0),
+  execution: ExecutionMetricsSchema.optional(),
+  sandbox: AggregateSandboxTelemetrySchema.optional(),
 });
 
 // ─── TypeScript Types (inferred from Zod) ────────────────────────────────────
@@ -139,8 +175,11 @@ export type Story = z.infer<typeof StorySchema>;
 export type HandoffDocument = z.infer<typeof HandoffDocumentSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type WorkspaceState = z.infer<typeof WorkspaceStateSchema>;
+export type ArchitectureMetrics = z.infer<typeof ArchitectureMetricsSchema>;
 export type StoryMetrics = z.infer<typeof StoryMetricsSchema>;
 export type AppBuilderResult = z.infer<typeof AppBuilderResultSchema>;
+export type ExecutionMetrics = z.infer<typeof ExecutionMetricsSchema>;
+export type AggregateSandboxTelemetry = z.infer<typeof AggregateSandboxTelemetrySchema>;
 export type SprintTelemetry = z.infer<typeof SprintTelemetrySchema>;
 
 export interface StoryContext {

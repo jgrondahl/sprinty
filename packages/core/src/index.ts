@@ -25,5 +25,16 @@ export * from './retrieval-tracking';
 export * from './service-guard';
 export { GateConfigSchema, type GateConfig } from './sprint-state';
 export { CliHumanGate } from './cli-human-gate';
-export { StoryMetricsSchema, type StoryMetrics, SprintTelemetrySchema, type SprintTelemetry } from './types';
+export {
+  ArchitectureMetricsSchema,
+  type ArchitectureMetrics,
+  StoryMetricsSchema,
+  type StoryMetrics,
+  ExecutionMetricsSchema,
+  type ExecutionMetrics,
+  AggregateSandboxTelemetrySchema,
+  type AggregateSandboxTelemetry,
+  SprintTelemetrySchema,
+  type SprintTelemetry,
+} from './types';
 export { TelemetryRetentionManager, DEFAULT_RETENTION_CONFIG, type RetentionConfig } from './telemetry-retention';
