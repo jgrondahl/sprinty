@@ -14,6 +14,7 @@ import {
   type ResumePoint,
   type SandboxEnvironment,
   type SandboxConfig,
+  type ArchitectureEnforcer,
 } from '@splinty/core';
 import {
   BusinessOwnerAgent,
@@ -25,6 +26,37 @@ import {
   TechnicalWriterAgent,
   AgentCallError,
 } from './index';
+
+const isArchitecturePlan = (value: unknown): value is import('@splinty/core').ArchitecturePlan => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['planId'] === 'string' &&
+    typeof candidate['projectId'] === 'string' &&
+    typeof candidate['scopeKey'] === 'string' &&
+    (candidate['level'] === 'global' || candidate['level'] === 'sprint') &&
+    Array.isArray(candidate['modules']) &&
+    Array.isArray(candidate['constraints']) &&
+    Array.isArray(candidate['storyModuleMapping']) &&
+    Array.isArray(candidate['executionOrder'])
+  );
+};
+
+const isImplementationTask = (value: unknown): value is import('@splinty/core').ImplementationTask => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate['taskId'] === 'string' &&
+    Array.isArray(candidate['storyIds']) &&
+    typeof candidate['module'] === 'string' &&
+    Array.isArray(candidate['targetFiles']) &&
+    Array.isArray(candidate['ownedFiles']) &&
+    Array.isArray(candidate['dependencies']) &&
+    Array.isArray(candidate['inputs']) &&
+    Array.isArray(candidate['expectedOutputs']) &&
+    Array.isArray(candidate['acceptanceCriteria'])
+  );
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +103,8 @@ export interface OrchestratorConfig {
   sandbox?: SandboxEnvironment;
   /** Config for sandbox initialization (image, limits, etc.) */
   sandboxConfig?: SandboxConfig;
+  /** Optional architecture enforcer for plan-based validation in planned-sprint mode */
+  enforcer?: ArchitectureEnforcer;
 }
 
 // ─── Agent Config Factories ───────────────────────────────────────────────────
@@ -302,6 +336,13 @@ export class SprintOrchestrator {
 
     // Step 6: IN_PROGRESS → IN_REVIEW (Developer)
     if (startStep <= PIPELINE_STEPS['DEVELOPER']!) {
+      if (
+        this.config.enforcer &&
+        isArchitecturePlan(handoff?.architecturePlan) &&
+        isImplementationTask(handoff?.task)
+      ) {
+        dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
+      }
       handoff = await dev.execute(handoff, currentStory);
       currentStory = this.reloadStory(ws, story.id, currentStory);
       this.updateLedger(currentStory, AgentPersona.DEVELOPER);
@@ -334,6 +375,13 @@ export class SprintOrchestrator {
 
         // FAIL — rework: developer gets another pass
         this.updateLedger(currentStory, AgentPersona.QA_ENGINEER);
+        if (
+          this.config.enforcer &&
+          isArchitecturePlan(handoff?.architecturePlan) &&
+          isImplementationTask(handoff?.task)
+        ) {
+          dev.setEnforcer(this.config.enforcer, handoff.architecturePlan, handoff.task);
+        }
         handoff = await dev.execute(handoff, currentStory);
         currentStory = this.reloadStory(ws, story.id, currentStory);
         this.updateLedger(currentStory, AgentPersona.DEVELOPER);

@@ -10,6 +10,7 @@ import {
   StorySource,
   WorkspaceManager,
   MockSandbox,
+  ArchitectureEnforcer,
   makeSuccessResult,
   type ResumePoint,
   type Story,
@@ -502,6 +503,22 @@ describe('SprintOrchestrator — sandbox pipeline', () => {
     const initCall = sandbox.calls.find((c) => c.method === 'init');
     expect(initCall).toBeDefined();
     expect((initCall!.args[0] as { image: string }).image).toBe('node:20-slim@sha256:abc123');
+  });
+
+  it('accepts enforcer config without breaking story-mode pipeline', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      enforcer: new ArchitectureEnforcer(),
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.testResults.failed).toBe(0);
   });
 });
 
