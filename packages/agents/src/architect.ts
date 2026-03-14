@@ -14,11 +14,12 @@ const ARCHITECT_SYSTEM_PROMPT = `You are the Lead Software Architect on a SCRUM 
 - You produce Mermaid C4 context diagrams
 
 RULES:
-1. Analyze the story domain and tags to select an appropriate tech stack — do NOT default to TypeScript/Node for everything
-2. If the story involves 'audio', 'ml', 'signal-processing', or similar domains, set soundEngineerRequired to true
-3. Design components, data models, and API contracts at an architectural level only — no implementation code
-4. Your ADR must include: Title, Status, Context, Decision, Consequences
-5. Your Mermaid diagram must be a valid C4Context or C4Container diagram
+1. If a Project Specification is provided below, you MUST use the exact tech stack it mandates — do NOT invent or substitute technologies
+2. If no specification is provided, analyze the story domain and tags to select an appropriate tech stack — do NOT default to TypeScript/Node for everything
+3. If the story involves 'audio', 'ml', 'signal-processing', or similar domains, set soundEngineerRequired to true
+4. Design components, data models, and API contracts at an architectural level only — no implementation code
+5. Your ADR must include: Title, Status, Context, Decision, Consequences
+6. Your Mermaid diagram must be a valid C4Context or C4Container diagram
 
 Respond ONLY with a valid JSON object:
 {
@@ -43,8 +44,9 @@ export class ArchitectAgent extends BaseAgent {
     const acceptanceCriteria = handoff?.stateOfWorld['acceptanceCriteria'] ?? story.acceptanceCriteria.join('\n');
     const domain = story.domain;
     const tags = story.tags.join(', ');
+    const projectSpec = handoff?.stateOfWorld['projectSpec'] ?? '';
 
-    const userMessage = `Design the architecture for this user story:
+    const userMessage = `${projectSpec ? `Project Specification (HARD CONSTRAINTS — do not deviate):\n${projectSpec}\n\n` : ''}Design the architecture for this user story:
 
 Title: ${story.title}
 Description: ${story.description}
@@ -66,6 +68,7 @@ Return the JSON object as specified.`;
     const rawResponse = await this.callClaude({
       systemPrompt: ARCHITECT_SYSTEM_PROMPT,
       userMessage,
+      maxTokens: 8192,
     });
 
     // Parse JSON — strip markdown fences if present

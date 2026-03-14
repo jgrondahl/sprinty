@@ -32,6 +32,7 @@ export class AgentCallError extends Error {
 export interface LlmCallOptions {
   systemPrompt: string;
   userMessage: string;
+  maxTokens?: number;
 }
 
 /** @deprecated Use LlmCallOptions. Kept as alias for backwards compatibility. */
@@ -74,7 +75,7 @@ export abstract class BaseAgent {
    * Throws AgentCallError on all attempts failing.
    */
   protected async callLlm(options: LlmCallOptions): Promise<string> {
-    const { systemPrompt, userMessage } = options;
+    const { systemPrompt, userMessage, maxTokens = 4096 } = options;
     const maxAttempts = this.config.maxRetries;
     let lastError: unknown;
 
@@ -86,7 +87,7 @@ export abstract class BaseAgent {
           model: this.config.model,
           systemPrompt,
           userMessage,
-          maxTokens: 4096,
+          maxTokens,
           temperature: this.config.temperature,
         });
 

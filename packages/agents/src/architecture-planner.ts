@@ -31,6 +31,7 @@ export interface PlanSprintOptions {
   projectId: string;
   sprintId: string;
   existingGlobalPlan?: ArchitecturePlan;
+  projectSpec?: string;
 }
 
 export interface PlanSprintResult {
@@ -46,6 +47,7 @@ export interface ReviseSprintOptions {
   currentSprintPlan: ArchitecturePlan;
   globalPlan: ArchitecturePlan;
   stories: Story[];
+  projectSpec?: string;
 }
 
 export interface ReviseSprintResult {
@@ -320,6 +322,13 @@ RULES:
 
 export class ArchitecturePlannerAgent extends BaseAgent {
   private passCContext: PassCContext | null = null;
+  private projectSpec: string | undefined = undefined;
+
+  private specBlock(): string {
+    return this.projectSpec
+      ? `Project Specification (HARD CONSTRAINTS — these override any inferred decisions):\n${this.projectSpec}`
+      : '';
+  }
 
   constructor(
     config: AgentConfig,
@@ -408,6 +417,8 @@ export class ArchitecturePlannerAgent extends BaseAgent {
       throw new Error('ArchitecturePlannerAgent.planSprint: stories array must not be empty');
     }
 
+    this.projectSpec = options.projectSpec;
+
     const globalOutcome = await this.planGlobalLevel(stories, projectId, existingGlobalPlan);
     const sprintOutcome = await this.planSprintLevel(globalOutcome.plan, stories, sprintId, projectId);
 
@@ -432,14 +443,17 @@ export class ArchitecturePlannerAgent extends BaseAgent {
       throw new Error('ArchitecturePlannerAgent.reviseSprint: workspace is not set');
     }
 
+    this.projectSpec = options.projectSpec;
+
     const userMessage = [
+      this.specBlock(),
       `Trigger: ${JSON.stringify(options.trigger)}`,
       `Evidence: ${JSON.stringify(options.evidence)}`,
       `Current sprint plan: ${JSON.stringify(options.currentSprintPlan)}`,
       `Global plan modules (for reference): ${JSON.stringify(options.globalPlan.modules)}`,
       `Stories: ${JSON.stringify(options.stories)}`,
       'Return only the requested JSON schema.',
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
 
     let retriesUsed = 0;
     while (true) {
@@ -535,6 +549,7 @@ export class ArchitecturePlannerAgent extends BaseAgent {
     existingPlan?: ArchitecturePlan
   ): Promise<PassAResult> {
     const userMessage = [
+      this.specBlock(),
       'Extract architecture facts from these refined sprint stories.',
       `Stories JSON:\n${JSON.stringify(stories, null, 2)}`,
       existingPlan ? `Existing Global Plan JSON:\n${JSON.stringify(existingPlan, null, 2)}` : '',
@@ -570,11 +585,15 @@ export class ArchitecturePlannerAgent extends BaseAgent {
 
   private async passB_chooseStack(facts: PassAResult, stories: Story[]): Promise<PassBResult> {
     const userMessage = [
+      this.specBlock(),
       'Choose the tech stack and top-level module boundaries.',
+      this.projectSpec
+        ? 'IMPORTANT: The project specification above mandates a specific tech stack. You MUST use exactly those technologies — do NOT invent an alternative stack.'
+        : '',
       `PassA Facts JSON:\n${JSON.stringify(facts, null, 2)}`,
       `Stories JSON:\n${JSON.stringify(stories, null, 2)}`,
       'Return only the requested JSON schema.',
-    ].join('\n\n');
+    ].filter(Boolean).join('\n\n');
 
     const rawResponse = await this.callLlm({
       systemPrompt: PASS_B_SYSTEM_PROMPT,
@@ -612,6 +631,7 @@ export class ArchitecturePlannerAgent extends BaseAgent {
     const systemPrompt = isSprintScope ? PASS_C_SPRINT_SYSTEM_PROMPT : PASS_C_GLOBAL_SYSTEM_PROMPT;
 
     const userMessage = [
+      this.specBlock(),
       isSprintScope
         ? `Generate sprint-scoped constraints and mapping for sprint '${this.passCContext.sprintId ?? ''}'.`
         : 'Generate global constraints and mapping.',
