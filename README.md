@@ -309,6 +309,14 @@ For each story, the pipeline outputs:
 | Documentation | Updated READMEs and technical docs |
 | Sprint telemetry | JSON artifact with cost, duration, and token metrics |
 
+### Key Behaviors to Know
+
+- **Architecture enforcement** — every Developer output is validated against dependency boundaries, file ownership, and required exports. Violations trigger a fix loop (up to 3 attempts) before the task is hard-blocked and sandbox execution is skipped.
+- **Automatic plan revision** — if repeated violations accumulate across a sprint group, the orchestrator repackages the enforcement evidence and calls the Architecture Planner to revise the plan before continuing. No manual intervention required.
+- **Retrieval escalation** — if the project-level context retrieval failure rate exceeds 15%, Splinty surfaces a structured escalation recommendation listing the top missed files and instructions for enabling hybrid retrieval mode.
+- **Concurrent execution** — stories with no `dependsOn` run in parallel; dependent stories wait automatically. Use the dependency graph to maximise throughput without sacrificing correctness.
+- **Exit codes**: `0` = all stories succeeded, `1` = one or more stories blocked, `2` = fatal/unrecoverable error.
+
 ---
 
 ## Story File Formats
