@@ -144,7 +144,12 @@ export class ProjectMemoryManager {
         additionalDeps: [],
       });
 
-    memory.stories.push(manifest);
+    const existingIndex = memory.stories.findIndex((s) => s.storyId === manifest.storyId);
+    if (existingIndex >= 0) {
+      memory.stories[existingIndex] = manifest;
+    } else {
+      memory.stories.push(manifest);
+    }
     memory.updatedAt = new Date().toISOString();
     this.save(projectId, memory);
   }
