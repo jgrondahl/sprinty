@@ -128,6 +128,37 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
     return 2;
   }
 
+  // ── Resolve project spec (docs/AGENTS.md hard constraints) ────────────────
+  // Explicit --spec flag takes precedence; otherwise auto-discover docs/AGENTS.md
+  // relative to the input file's directory (for file source) or CWD.
+  let projectSpec: string | undefined;
+  const specFlagPath = flags['spec'];
+  if (specFlagPath) {
+    const specAbsPath = path.resolve(specFlagPath);
+    if (fs.existsSync(specAbsPath)) {
+      projectSpec = fs.readFileSync(specAbsPath, 'utf-8');
+      console.log(`Using project spec: ${specAbsPath}`);
+    } else {
+      console.error(red(`Error: spec file not found: ${specAbsPath}`));
+      return 2;
+    }
+  } else {
+    // Auto-discover: look for docs/AGENTS.md relative to input file dir or CWD
+    const searchBase = source === 'file' ? path.dirname(path.resolve(input)) : process.cwd();
+    const candidates = [
+      path.join(searchBase, 'docs', 'AGENTS.md'),
+      path.join(searchBase, '..', 'docs', 'AGENTS.md'),
+      path.join(process.cwd(), 'docs', 'AGENTS.md'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        projectSpec = fs.readFileSync(candidate, 'utf-8');
+        console.log(`Auto-detected project spec: ${candidate}`);
+        break;
+      }
+    }
+  }
+
   // ── Load stories ───────────────────────────────────────────────────────────
   let stories;
   try {
@@ -197,6 +228,7 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
     ...(useCopilot
       ? { defaultClient: copilotClient, defaultModel: 'gpt-4o', lightModel: 'gpt-4o-mini' }
       : {}),
+    ...(projectSpec ? { projectSpec } : {}),
   });
 
   let results;
@@ -386,6 +418,8 @@ RUN
     --source github   Load stories from GitHub Issues
     --input <value>   File path, Jira board ID, or GitHub owner/repo
     --project <id>    Project ID to use (default: "default")
+    --spec <path>     Path to project spec file (AGENTS.md) with tech stack constraints.
+                      Auto-discovered at docs/AGENTS.md if not specified.
 
   Required env vars (set before running):
     ANTHROPIC_API_KEY        Claude API key
@@ -411,6 +445,7 @@ EXPORT
 EXAMPLES
   splinty init --name my-app
   splinty run --source file --input stories/sprint1.md --project my-app
+  splinty run --source file --input stories/sprint1.md --project my-app --spec docs/AGENTS.md
   splinty run --source github --input owner/my-repo --project my-app
   splinty status --project my-app
   splinty export --format=json --sprint=sprint-1736362052203 --project my-app
