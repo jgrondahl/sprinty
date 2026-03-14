@@ -151,6 +151,7 @@ export class DeveloperAgent extends BaseAgent {
     }
 
     const techStack = handoff?.stateOfWorld['techStack'] ?? 'TypeScript';
+    const projectSpec = handoff?.stateOfWorld['projectSpec'] ?? '';
     const acceptanceCriteria = story.acceptanceCriteria.join('\n');
 
     const taskRef = handoff?.task;
@@ -181,7 +182,7 @@ export class DeveloperAgent extends BaseAgent {
           .join('\n\n')}`
       : '';
 
-    const userMessage = `Implement the following user story based on the architecture:
+    const userMessage = `${projectSpec ? `Project Specification (HARD CONSTRAINTS — use these technologies exactly, no substitutions):\n${projectSpec}\n\n` : ''}Implement the following user story based on the architecture:
 
 Story: ${story.title}
 Description: ${story.description}
@@ -209,7 +210,10 @@ Generate source files and unit tests that implement the AC. Return JSON with fil
     };
 
     try {
-      const cleaned = rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      const cleaned = jsonMatch
+        ? jsonMatch[0]
+        : rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       parsed = JSON.parse(cleaned) as typeof parsed;
     } catch {
       throw new Error(

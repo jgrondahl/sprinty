@@ -109,15 +109,16 @@ Return JSON with passedAC, failedAC, bugs, verdict (PASS/FAIL/BLOCKED), addition
     const rawResponse = await this.callClaude({
       systemPrompt: QA_SYSTEM_PROMPT,
       userMessage,
+      maxTokens: 8192,
     });
 
-    // Parse JSON — strip fences if present
+    // Parse JSON — extract outermost JSON object, stripping any fences or surrounding prose
     let parsed: Partial<QAVerdict>;
     try {
-      const cleaned = rawResponse
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
+      const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+      const cleaned = jsonMatch
+        ? jsonMatch[0]
+        : rawResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       parsed = JSON.parse(cleaned) as Partial<QAVerdict>;
     } catch {
       throw new Error(
