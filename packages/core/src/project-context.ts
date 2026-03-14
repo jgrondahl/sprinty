@@ -21,6 +21,8 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 
 const MAX_RELEVANT_FILES = 20;
+const MAX_RELEVANT_CHARS = 8_000;
+const PROJECT_SRC_PREFIX = 'src/';
 
 export class ProjectContextBuilder {
   private readonly importGraphBuilder: ImportGraphBuilder;
@@ -44,7 +46,9 @@ export class ProjectContextBuilder {
       return null;
     }
 
-    const allProjectFiles = this.workspaceManager.listProjectFiles(projectId);
+    const allProjectFiles = this.workspaceManager
+      .listProjectFiles(projectId)
+      .filter((f) => f.startsWith(PROJECT_SRC_PREFIX));
     const projectFileSet = new Set(allProjectFiles);
 
     const priorityFiles = new Set<string>();
@@ -64,13 +68,15 @@ export class ProjectContextBuilder {
     }
 
     const relevantFiles: FileContent[] = [];
+    let totalChars = 0;
 
     for (const filePath of priorityFiles) {
-      if (relevantFiles.length >= MAX_RELEVANT_FILES) {
+      if (relevantFiles.length >= MAX_RELEVANT_FILES || totalChars >= MAX_RELEVANT_CHARS) {
         break;
       }
       try {
         const content = this.workspaceManager.readProjectFile(projectId, filePath);
+        totalChars += content.length;
         relevantFiles.push({ path: filePath, content });
       } catch {
         continue;
@@ -78,7 +84,7 @@ export class ProjectContextBuilder {
     }
 
     for (const filePath of allProjectFiles) {
-      if (relevantFiles.length >= MAX_RELEVANT_FILES) {
+      if (relevantFiles.length >= MAX_RELEVANT_FILES || totalChars >= MAX_RELEVANT_CHARS) {
         break;
       }
       if (priorityFiles.has(filePath)) {
@@ -89,6 +95,7 @@ export class ProjectContextBuilder {
       }
       try {
         const content = this.workspaceManager.readProjectFile(projectId, filePath);
+        totalChars += content.length;
         relevantFiles.push({ path: filePath, content });
       } catch {
         continue;
