@@ -6,6 +6,7 @@ import {
   StorySchema,
   HandoffDocumentSchema,
   AgentConfigSchema,
+  ModelConfigSchema,
   WorkspaceStateSchema,
   AppBuilderResultSchema,
 } from './types';
@@ -187,6 +188,54 @@ describe('AgentConfigSchema', () => {
         model: 'claude-sonnet-4-5',
         systemPrompt: 'You are a developer.',
         temperature: 2.0,
+      })
+    ).toThrow();
+  });
+});
+
+describe('ModelConfigSchema', () => {
+  it('parses a valid model config with required field only', () => {
+    const result = ModelConfigSchema.parse({
+      model: 'gpt-4-turbo',
+    });
+    expect(result.model).toBe('gpt-4-turbo');
+    expect(result.temperature).toBeUndefined();
+    expect(result.maxTokens).toBeUndefined();
+  });
+
+  it('parses a valid model config with all fields', () => {
+    const result = ModelConfigSchema.parse({
+      model: 'claude-3-opus',
+      temperature: 0.5,
+      maxTokens: 2048,
+    });
+    expect(result.model).toBe('claude-3-opus');
+    expect(result.temperature).toBe(0.5);
+    expect(result.maxTokens).toBe(2048);
+  });
+
+  it('rejects model with empty string', () => {
+    expect(() =>
+      ModelConfigSchema.parse({
+        model: '',
+      })
+    ).toThrow();
+  });
+
+  it('rejects temperature out of range (too high)', () => {
+    expect(() =>
+      ModelConfigSchema.parse({
+        model: 'gpt-4',
+        temperature: 1.5,
+      })
+    ).toThrow();
+  });
+
+  it('rejects maxTokens as non-positive integer', () => {
+    expect(() =>
+      ModelConfigSchema.parse({
+        model: 'gpt-4',
+        maxTokens: 0,
       })
     ).toThrow();
   });

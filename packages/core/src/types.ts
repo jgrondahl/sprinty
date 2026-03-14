@@ -84,6 +84,12 @@ export const AgentConfigSchema = z.object({
   temperature: z.number().min(0).max(1).default(0.7),
 });
 
+export const ModelConfigSchema = z.object({
+  model: z.string().min(1),
+  temperature: z.number().min(0).max(1).optional(),
+  maxTokens: z.number().int().positive().optional(),
+});
+
 export const WorkspaceStateSchema = z.object({
   projectId: z.string().min(1),
   storyId: z.string().min(1),
@@ -174,6 +180,7 @@ export const SprintTelemetrySchema = z.object({
 export type Story = z.infer<typeof StorySchema>;
 export type HandoffDocument = z.infer<typeof HandoffDocumentSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type ModelConfig = z.infer<typeof ModelConfigSchema>;
 export type WorkspaceState = z.infer<typeof WorkspaceStateSchema>;
 export type ArchitectureMetrics = z.infer<typeof ArchitectureMetricsSchema>;
 export type StoryMetrics = z.infer<typeof StoryMetricsSchema>;
