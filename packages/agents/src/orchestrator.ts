@@ -21,6 +21,7 @@ import {
   classifyRevisionLevel,
   detectRepeatedEnforcementViolations,
   EnforcementReportSchema,
+  ModelConfigSchema,
   type LlmClient,
   type Story,
   type HandoffDocument,
@@ -52,9 +53,11 @@ import {
   type ServiceApprovalGate,
   type RetentionConfig,
   type EnforcementReport,
+  type ModelConfig,
   ServiceCountGuard,
   SprintTaskPlanSchema,
 } from '@splinty/core';
+import { z } from 'zod';
 import * as path from 'path';
 import { ArchitecturePlannerAgent } from './architecture-planner';
 import {
@@ -126,12 +129,17 @@ export interface OrchestratorConfig {
    * Useful when switching providers — e.g. GitHub Copilot uses 'gpt-4o' instead
    * of Anthropic model strings like 'claude-3-5-sonnet-20241022'.
    */
-  defaultModel?: string;
+  defaultModel?: string | ModelConfig;
   /**
    * Override the model used by lightweight agents (currently QA_ENGINEER).
    * Defaults to the same as defaultModel when set, or the built-in default.
    */
-  lightModel?: string;
+  lightModel?: string | ModelConfig;
+  /**
+   * Per-persona model configuration overrides. Allows setting different models,
+   * temperatures, and maxTokens for specific agent personas.
+   */
+  models?: Partial<Record<AgentPersona, ModelConfig>>;
   /** Injectable git factory — forwarded to DeveloperAgent */
   gitFactory?: Parameters<DeveloperAgent['setGitFactory']>[0];
   /** Injectable GitHub PR creator — called after QA PASS */
@@ -154,6 +162,13 @@ export interface OrchestratorConfig {
   humanGate?: HumanGate;
   gates?: GateConfig[];
   telemetryRetention?: RetentionConfig;
+  /**
+   * Raw content of the project-level AGENTS.md (or equivalent spec file).
+   * When provided, this is injected into every planning and implementation agent
+   * so they cannot invent a conflicting tech stack or service topology.
+   * Typically the caller reads this from `docs/AGENTS.md` before constructing the orchestrator.
+   */
+  projectSpec?: string;
 }
 
 type RevisionPlanner = Pick<ArchitecturePlannerAgent, 'reviseSprint'>;
@@ -167,6 +182,7 @@ interface ExecuteRevisionLoopOptions {
   stories: Story[];
   humanGate: HumanGate;
   globalPlan: ArchitecturePlan;
+  projectSpec?: string;
 }
 
 class StoryMetricsCollector {
@@ -294,6 +310,7 @@ export async function executeRevisionLoop(options: ExecuteRevisionLoopOptions): 
     currentSprintPlan: state.currentSprintPlan,
     globalPlan,
     stories,
+    projectSpec: options.projectSpec,
   });
   const taskPlan = decomposer.decompose(revision.revisedPlan, stories);
 
@@ -327,6 +344,29 @@ function makeConfig(persona: AgentPersona, model: string): AgentConfig {
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 const DEFAULT_LIGHT_MODEL = 'claude-3-haiku-20240307';
 
+const PERSONA_TEMPERATURE_DEFAULTS: Partial<Record<AgentPersona, number>> = {
+  [AgentPersona.QA_ENGINEER]: 0.2,
+  [AgentPersona.ARCHITECTURE_PLANNER]: 0.4,
+  [AgentPersona.TECHNICAL_WRITER]: 0.2,
+};
+
+function resolveModelConfig(
+  persona: AgentPersona,
+  models: Partial<Record<AgentPersona, ModelConfig>> | undefined,
+  defaultModel: string | ModelConfig | undefined,
+): { model: string; temperature: number; maxTokens?: number } {
+  const normalize = (m: string | ModelConfig | undefined): ModelConfig | undefined =>
+    typeof m === 'string' ? { model: m } : m;
+  const perPersona = models?.[persona];
+  const base = normalize(defaultModel) ?? { model: DEFAULT_MODEL };
+  const merged = { ...base, ...perPersona };
+  const temperature =
+    merged.temperature ??
+    PERSONA_TEMPERATURE_DEFAULTS[persona] ??
+    0.7;
+  return { model: merged.model, temperature, maxTokens: merged.maxTokens };
+}
+
 const defaultPipeline: PipelineConfig = {
   steps: [
     { agent: AgentPersona.BUSINESS_OWNER },
@@ -343,23 +383,21 @@ const defaultPipeline: PipelineConfig = {
 };
 
 function buildAgentConfigs(
-  model: string = DEFAULT_MODEL,
-  lightModel: string = DEFAULT_LIGHT_MODEL,
+  models?: Partial<Record<AgentPersona, ModelConfig>>,
+  defaultModel?: string | ModelConfig,
+  lightModel?: string | ModelConfig,
 ): Record<AgentPersona, AgentConfig> {
-  return {
-    [AgentPersona.BUSINESS_OWNER]: makeConfig(AgentPersona.BUSINESS_OWNER, model),
-    [AgentPersona.PRODUCT_OWNER]: makeConfig(AgentPersona.PRODUCT_OWNER, model),
-    [AgentPersona.ARCHITECT]: makeConfig(AgentPersona.ARCHITECT, model),
-    [AgentPersona.DEVELOPER]: makeConfig(AgentPersona.DEVELOPER, model),
-    [AgentPersona.SOUND_ENGINEER]: makeConfig(AgentPersona.SOUND_ENGINEER, model),
-    [AgentPersona.MIGRATION_ENGINEER]: makeConfig(AgentPersona.MIGRATION_ENGINEER, model),
-    [AgentPersona.INFRASTRUCTURE_ENGINEER]: makeConfig(AgentPersona.INFRASTRUCTURE_ENGINEER, model),
-    [AgentPersona.INTEGRATION_TEST_ENGINEER]: makeConfig(AgentPersona.INTEGRATION_TEST_ENGINEER, model),
-    [AgentPersona.QA_ENGINEER]: makeConfig(AgentPersona.QA_ENGINEER, lightModel),
-    [AgentPersona.TECHNICAL_WRITER]: makeConfig(AgentPersona.TECHNICAL_WRITER, model),
-    [AgentPersona.ARCHITECTURE_PLANNER]: makeConfig(AgentPersona.ARCHITECTURE_PLANNER, model),
-    [AgentPersona.ORCHESTRATOR]: makeConfig(AgentPersona.ORCHESTRATOR, model),
-  };
+  const effectiveModels = { ...models };
+  if (lightModel && !effectiveModels[AgentPersona.QA_ENGINEER]) {
+    const normalized = typeof lightModel === 'string' ? { model: lightModel } : lightModel;
+    effectiveModels[AgentPersona.QA_ENGINEER] = normalized;
+  }
+  return Object.fromEntries(
+    Object.values(AgentPersona).map((persona) => {
+      const resolved = resolveModelConfig(persona, effectiveModels, defaultModel);
+      return [persona, { ...makeConfig(persona, resolved.model), temperature: resolved.temperature, ...(resolved.maxTokens ? { maxTokens: resolved.maxTokens } : {}) }];
+    })
+  ) as Record<AgentPersona, AgentConfig>;
 }
 
 // ─── SprintOrchestrator ───────────────────────────────────────────────────────
@@ -382,6 +420,7 @@ export class SprintOrchestrator {
   private plannedSprintState: PlannedSprintState | null = null;
 
   constructor(config: OrchestratorConfig) {
+    OrchestratorConfigSchema.parse(config);
     this.config = config;
     this.ledger = new LedgerManager(config.workspaceBaseDir);
     this.handoffMgr = new HandoffManager();
@@ -466,7 +505,7 @@ export class SprintOrchestrator {
       ? crypto.randomUUID()
       : `${this.config.projectId}-${Date.now()}`;
     const sprintWs = this.workspaceMgr.createWorkspace(this.config.projectId, 'sprint');
-    const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
+    const agentConfigs = buildAgentConfigs(this.config.models, this.config.defaultModel, this.config.lightModel);
     const clientFor = (persona: AgentPersona): LlmClient | undefined =>
       this.config.clients?.[persona] ?? this.config.defaultClient;
     const storyCollectors = new Map<string, StoryMetricsCollector>();
@@ -524,6 +563,7 @@ export class SprintOrchestrator {
         storyRevisionCounts: Object.fromEntries(stories.map((story) => [story.id, 0])),
         maxRevisionsPerStory: 1,
         checkpoint,
+        enforcementReports: [],
       };
     } else {
       const biz = new BusinessOwnerAgent(
@@ -596,6 +636,7 @@ export class SprintOrchestrator {
         stories: refinedStories,
         projectId: this.config.projectId,
         sprintId,
+        projectSpec: this.config.projectSpec,
       });
 
       if (this.config.serviceGuardrails) {
@@ -656,6 +697,7 @@ export class SprintOrchestrator {
         maxRevisions: 1,
         storyRevisionCounts: Object.fromEntries(refinedStories.map((story) => [story.id, 0])),
         maxRevisionsPerStory: 1,
+        enforcementReports: [],
       };
 
       this.plannedSprintState = state;
@@ -744,6 +786,7 @@ export class SprintOrchestrator {
               taskId: task.taskId,
               taskModule: task.module,
               taskStoryIds: task.storyIds.join(','),
+              ...(this.config.projectSpec ? { projectSpec: this.config.projectSpec } : {}),
             },
             `Implement task ${task.taskId}`,
             []
@@ -765,7 +808,10 @@ export class SprintOrchestrator {
           },
         };
 
-        const projectCtx: ProjectContext | null = this.contextBuilder.build(this.config.projectId, primaryStoryId, [], task.targetFiles ?? []);
+        const storyDependsOn = task.storyIds.flatMap(
+          (id) => currentStories.get(id)?.dependsOn ?? []
+        );
+        const projectCtx: ProjectContext | null = this.contextBuilder.build(this.config.projectId, primaryStoryId, storyDependsOn, task.targetFiles ?? []);
         const handoffWithCtx: HandoffDocument = projectCtx
           ? { ...handoff, projectContext: projectCtx }
           : handoff;
@@ -1103,7 +1149,7 @@ export class SprintOrchestrator {
       startStep = resume.pipelineStep + 1;
     }
 
-    const agentConfigs = buildAgentConfigs(this.config.defaultModel, this.config.lightModel);
+    const agentConfigs = buildAgentConfigs(this.config.models, this.config.defaultModel, this.config.lightModel);
 
     const clientFor = (persona: AgentPersona): LlmClient | undefined =>
       this.config.clients?.[persona] ?? this.config.defaultClient;
@@ -1232,6 +1278,12 @@ export class SprintOrchestrator {
         if (handoff && stepIndex > 0) {
           this.saveResumePoint(ws, currentStory, AgentPersona.ORCHESTRATOR, handoff, stepIndex - 1);
         }
+        if (handoff && this.config.projectSpec) {
+          handoff = {
+            ...handoff,
+            stateOfWorld: { ...handoff.stateOfWorld, projectSpec: this.config.projectSpec },
+          };
+        }
         collector.startAgent(AgentPersona.ARCHITECT);
         collector.recordLlmCall();
         try {
@@ -1276,6 +1328,12 @@ export class SprintOrchestrator {
         );
         if (handoff && projectCtx) {
           handoff = { ...handoff, projectContext: projectCtx };
+        }
+        if (handoff && this.config.projectSpec) {
+          handoff = {
+            ...handoff,
+            stateOfWorld: { ...handoff.stateOfWorld, projectSpec: this.config.projectSpec },
+          };
         }
         const requestedFiles = handoff?.projectContext?.relevantFiles.map((f) => f.path) ?? [];
         collector.startAgent(AgentPersona.DEVELOPER);
@@ -1548,6 +1606,7 @@ export class SprintOrchestrator {
       stories,
       humanGate,
       globalPlan,
+      projectSpec: this.config.projectSpec,
     });
 
     if (updatedState.revisionCount > effectiveState.revisionCount) {
@@ -1657,3 +1716,26 @@ export class SprintOrchestrator {
     }
   }
 }
+
+export const OrchestratorConfigSchema = z.object({
+  projectId: z.string().min(1),
+  executionMode: z.enum(['story', 'planned-sprint']).optional(),
+  workspaceBaseDir: z.string().optional(),
+  defaultClient: z.custom<LlmClient>().optional(),
+  clients: z.custom<Partial<Record<AgentPersona, LlmClient>>>().optional(),
+  defaultModel: z.union([z.string().min(1), ModelConfigSchema]).optional(),
+  lightModel: z.union([z.string().min(1), ModelConfigSchema]).optional(),
+  models: z.object({}).catchall(ModelConfigSchema).optional(),
+  gitFactory: z.custom<unknown>().optional(),
+  createPullRequest: z.custom<unknown>().optional(),
+  sandbox: z.custom<unknown>().optional(),
+  sandboxConfig: z.custom<unknown>().optional(),
+  pipeline: z.custom<unknown>().optional(),
+  gates: z.custom<unknown>().optional(),
+  humanGate: z.custom<unknown>().optional(),
+  telemetryRetention: z.custom<unknown>().optional(),
+  serviceGuardrails: z.custom<unknown>().optional(),
+  enforcer: z.custom<unknown>().optional(),
+  serviceApprovalGate: z.custom<unknown>().optional(),
+  projectSpec: z.string().optional(),
+});

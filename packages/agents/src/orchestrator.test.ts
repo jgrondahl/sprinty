@@ -1567,3 +1567,86 @@ describe('SprintOrchestrator — revision loop and checkpoint', () => {
     expect(loaded!.activeGlobalPlanId).toBe('global-plan-1');
   });
 });
+
+describe('SprintOrchestrator — model config', () => {
+  it('applies defaultModel to all agents when set', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      defaultModel: 'gpt-4o',
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+
+  it('applies defaultModel with temperature override to all agents', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      defaultModel: { model: 'gpt-4o', temperature: 0.3 },
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+
+  it('applies per-persona override via models config', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      defaultModel: 'gpt-4o',
+      models: {
+        [AgentPersona.QA_ENGINEER]: { model: 'gpt-4o-mini' },
+      },
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+
+  it('lightModel backward compat applies to QA when models[QA] not set', async () => {
+    const client = makeQueuedClient([bizResp, poResp, archResp, devResp, qaPassResp, readmeResp]);
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      workspaceBaseDir: tmpDir,
+      defaultClient: client,
+      gitFactory: makeMockGit(),
+      defaultModel: 'gpt-4o',
+      lightModel: 'claude-3-haiku-20240307',
+    });
+
+    const results = await orch.run([makeRawStory()]);
+    expect(results[0]!.testResults.failed).toBe(0);
+  });
+
+  it('rejects empty projectId via Zod validation', () => {
+    expect(() => {
+      new SprintOrchestrator({
+        projectId: '',
+      });
+    }).toThrow();
+  });
+
+  it('rejects invalid temperature via Zod validation', () => {
+    expect(() => {
+      new SprintOrchestrator({
+        projectId: 'test-proj',
+        defaultModel: { model: 'gpt-4o', temperature: 2 },
+      });
+    }).toThrow();
+  });
+});
