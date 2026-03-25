@@ -208,6 +208,7 @@ describe('FileConnector — setSource', () => {
       title: 'Hello World',
       description: 'desc',
       acceptanceCriteria: [],
+      dependsOn: [],
       state: StoryState.RAW,
       source: StorySource.FILE,
       workspacePath: '',

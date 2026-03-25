@@ -16,6 +16,7 @@ function makeStory(id: string, state: StoryState = StoryState.RAW): Story {
     title: `Story ${id}`,
     description: 'A test story',
     acceptanceCriteria: [],
+    dependsOn: [],
     state,
     source: StorySource.FILE,
     workspacePath: `.splinty/proj/stories/${id}`,

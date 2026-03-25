@@ -10,6 +10,7 @@ function makeStory(state: StoryState): Story {
     title: 'Test story',
     description: 'desc',
     acceptanceCriteria: [],
+    dependsOn: [],
     state,
     source: StorySource.FILE,
     workspacePath: '.splinty/proj/stories/story-001',
