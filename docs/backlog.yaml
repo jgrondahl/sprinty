@@ -1,0 +1,471 @@
+# AI Deep House Coach — Backlog
+# Extracted from AI-Coaching-App.yaml for use with:
+#   splinty run --source file --input docs/backlog.yaml --project ai-coaching-app
+
+- id: platform-repo-bootstrap
+  title: Monorepo bootstrap
+  description: Create initial repository structure for frontend, API, and workers.
+  acceptanceCriteria:
+    - repository contains frontend, api, audio-worker, learning-worker
+    - workspace package configuration resolves dependencies
+    - README documents project structure
+
+- id: platform-service-layout
+  title: Service directory layout
+  description: Define deterministic service directory layout.
+  dependsOn: [platform-repo-bootstrap]
+  acceptanceCriteria:
+    - each service has independent root directory
+    - shared contracts package exists
+    - services compile independently
+
+- id: platform-service-boundaries
+  title: Define service boundaries
+  description: Document architecture boundaries between services.
+  dependsOn: [platform-service-layout]
+  acceptanceCriteria:
+    - service responsibilities documented
+    - cross-service imports prohibited
+    - allowed communication paths defined
+
+- id: platform-env-config
+  title: Environment configuration
+  description: Centralized configuration validation for services.
+  dependsOn: [platform-service-boundaries]
+  acceptanceCriteria:
+    - services fail fast on missing configuration
+    - config schema validated at startup
+
+- id: platform-object-storage
+  title: Object storage system
+  description: Durable storage for audio and artifacts.
+  dependsOn: [platform-env-config]
+  acceptanceCriteria:
+    - audio stored using immutable keys
+    - artifacts stored separately
+    - signed URLs supported
+
+- id: platform-analysis-versioning
+  title: Analysis pipeline versioning
+  description: Version DSP pipeline to ensure reproducible feature extraction across runs.
+  dependsOn: [platform-env-config]
+  acceptanceCriteria:
+    - pipeline version tracked per analysis job
+    - reference features frozen per pipeline version
+    - reprocessing triggered on feature version change
+
+- id: platform-infrastructure
+  title: Docker and CI infrastructure
+  description: Dockerfiles, docker-compose, and GitHub Actions CI for all services.
+  dependsOn: [platform-service-layout]
+  acceptanceCriteria:
+    - each service has a Dockerfile
+    - docker-compose.yml wires all 4 services with postgres and redis
+    - GitHub Actions workflow runs tests on push
+
+- id: platform-auth-schema
+  title: Auth database schema
+  description: PostgreSQL schema for users and sessions.
+  dependsOn: [platform-service-boundaries]
+  acceptanceCriteria:
+    - users table includes id, email, password_hash, created_at
+    - sessions table includes id, user_id, token, expires_at
+    - Alembic migration files generated (up and down)
+
+- id: platform-auth-api
+  title: Auth REST API
+  description: FastAPI endpoints for user registration and login using JWT.
+  dependsOn: [platform-auth-schema]
+  acceptanceCriteria:
+    - POST /auth/register returns 201 with JWT on success
+    - POST /auth/login returns 200 with JWT on valid credentials
+    - passwords hashed with bcrypt
+    - JWT expiry enforced
+
+- id: platform-auth-ui
+  title: Auth UI
+  description: Vue 3 login and registration pages.
+  dependsOn: [platform-auth-api]
+  acceptanceCriteria:
+    - login form submits to POST /auth/login
+    - registration form submits to POST /auth/register
+    - JWT stored in httpOnly cookie or localStorage
+    - redirects to dashboard on success
+
+- id: platform-user-profile
+  title: User profile
+  description: User profile retrieval and update.
+  dependsOn: [platform-auth-api]
+  acceptanceCriteria:
+    - GET /users/me returns authenticated user profile
+    - PATCH /users/me updates display name
+    - profile ownership enforced
+
+- id: platform-project-schema
+  title: Project database schema
+  description: PostgreSQL schema for producer projects.
+  dependsOn: [platform-auth-schema]
+  acceptanceCriteria:
+    - projects table includes id, user_id, name, created_at
+    - Alembic migration files generated
+
+- id: platform-project-api
+  title: Project REST API
+  description: FastAPI CRUD endpoints for producer projects.
+  dependsOn: [platform-project-schema]
+  acceptanceCriteria:
+    - POST /projects creates a project
+    - GET /projects returns user's projects
+    - GET /projects/{id} returns a single project
+    - DELETE /projects/{id} deletes a project
+    - project ownership enforced on all endpoints
+
+- id: platform-project-dashboard
+  title: Project dashboard UI
+  description: Vue 3 dashboard listing producer projects.
+  dependsOn: [platform-project-api]
+  acceptanceCriteria:
+    - lists all projects for authenticated user
+    - create new project form
+    - clicking a project navigates to project detail
+
+- id: upload-track-schema
+  title: Track upload database schema
+  description: PostgreSQL schema for uploaded tracks and track versions.
+  dependsOn: [platform-project-schema]
+  acceptanceCriteria:
+    - uploads table includes id, project_id, filename, s3_key, status, created_at
+    - track_versions table tracks versioned uploads per project
+    - Alembic migration files generated
+
+- id: upload-track-api
+  title: Track upload API
+  description: FastAPI endpoints for upload initiation and status.
+  dependsOn: [upload-track-schema, platform-object-storage]
+  acceptanceCriteria:
+    - POST /uploads returns a pre-signed S3 URL
+    - POST /uploads/{id}/complete marks upload as received and enqueues analysis job
+    - GET /uploads/{id} returns upload status
+    - upload rate limit of 20 per user per hour enforced
+
+- id: upload-track-ui
+  title: Track upload UI
+  description: Vue 3 upload interface with drag-and-drop.
+  dependsOn: [upload-track-api]
+  acceptanceCriteria:
+    - drag-and-drop file upload supported
+    - upload progress shown
+    - redirects to analysis status page on completion
+
+- id: analysis-job-queue
+  title: Analysis job queue
+  description: Redis queue for analysis and learning jobs using rq.
+  acceptanceCriteria:
+    - queue supports retry
+    - dead-letter queue enabled
+    - jobs track lifecycle states (queued, running, complete, failed)
+
+- id: audio-worker-bootstrap
+  title: Audio worker service
+  description: Python worker consuming analysis jobs from Redis using rq.
+  dependsOn: [analysis-job-queue]
+  acceptanceCriteria:
+    - worker consumes queue
+    - stage transitions logged with correlation_id
+    - graceful shutdown supported
+
+- id: learning-worker-bootstrap
+  title: Learning worker service
+  description: Python worker responsible for coaching model training.
+  dependsOn: [analysis-job-queue]
+  acceptanceCriteria:
+    - worker consumes learning jobs
+    - model version published to recommendation_models table after training
+
+- id: analysis-pipeline-orchestrator
+  title: DSP pipeline orchestrator
+  description: Stage-runner inside audio-worker that executes the analysis DAG deterministically.
+  dependsOn: [audio-worker-bootstrap]
+  acceptanceCriteria:
+    - stages execute according to DAG dependency order
+    - StageExecutionResult persisted after each stage
+    - downstream stages enqueued automatically
+    - idempotent — safe to re-run failed stages
+
+- id: audio-normalization-pipeline
+  title: Audio normalization
+  description: DSP plugin that converts uploaded audio into canonical analysis format.
+  dependsOn: [analysis-pipeline-orchestrator]
+  acceptanceCriteria:
+    - sample rate normalized to 44100 Hz
+    - bit depth normalized to 16-bit PCM
+    - normalized audio stored in object storage
+    - implements DSPPlugin interface
+
+- id: audio-feature-schema
+  title: Audio feature database schema
+  description: PostgreSQL schema for feature vectors using jsonb with gzip compression.
+  dependsOn: [upload-track-schema]
+  acceptanceCriteria:
+    - feature_vectors table includes track_id, feature_type, feature_version, vector (jsonb), segment_start, segment_end
+    - dsp_plugins registry table includes plugin_name, stage_name, version, dependencies
+    - Alembic migration files generated
+
+- id: audio-feature-cache
+  title: Audio feature cache
+  description: In-memory feature cache passed between DSP stages within a single analysis session.
+  dependsOn: [audio-feature-schema]
+  acceptanceCriteria:
+    - cache keyed by (track_id, feature_type, feature_version)
+    - cache hit avoids redundant extraction
+    - cache miss falls back to database lookup
+
+- id: audio-metadata-extraction
+  title: Audio metadata extraction
+  description: DSP plugin extracting duration, sample rate, channels from normalized audio.
+  dependsOn: [audio-normalization-pipeline, audio-feature-cache]
+  acceptanceCriteria:
+    - extracts duration, sample rate, channel count
+    - stores result as feature vector
+    - implements DSPPlugin interface with stage_name=metadata, dependsOn=[normalization]
+
+- id: audio-waveform-generation
+  title: Waveform generation
+  description: DSP plugin generating waveform data for visualization.
+  dependsOn: [audio-metadata-extraction]
+  acceptanceCriteria:
+    - downsampled waveform array generated
+    - stored as artifact in object storage
+    - implements DSPPlugin interface with stage_name=waveform, dependsOn=[metadata]
+
+- id: audio-bpm-detection
+  title: BPM detection
+  description: DSP plugin detecting beats per minute using librosa.
+  dependsOn: [audio-metadata-extraction]
+  acceptanceCriteria:
+    - BPM value detected and stored as feature vector
+    - implements DSPPlugin interface with stage_name=bpm, dependsOn=[metadata]
+
+- id: audio-key-detection
+  title: Key detection
+  description: DSP plugin detecting musical key using librosa.
+  dependsOn: [audio-metadata-extraction]
+  acceptanceCriteria:
+    - key and mode detected and stored
+    - implements DSPPlugin interface with stage_name=key, dependsOn=[metadata]
+
+- id: audio-mfcc-extraction
+  title: MFCC extraction
+  description: DSP plugin extracting Mel-frequency cepstral coefficients using librosa.
+  dependsOn: [audio-normalization-pipeline, audio-feature-cache]
+  acceptanceCriteria:
+    - 13 MFCC coefficients extracted per segment
+    - stored as feature vector with segment boundaries
+    - implements DSPPlugin interface with stage_name=mfcc, dependsOn=[normalization]
+
+- id: audio-spectral-contrast
+  title: Spectral contrast extraction
+  description: DSP plugin extracting spectral contrast using librosa.
+  dependsOn: [audio-normalization-pipeline, audio-feature-cache]
+  acceptanceCriteria:
+    - spectral contrast extracted per segment
+    - stored as feature vector
+    - implements DSPPlugin interface with stage_name=spectral_contrast, dependsOn=[normalization]
+
+- id: audio-chroma-features
+  title: Chroma feature extraction
+  description: DSP plugin extracting chroma features using librosa.
+  dependsOn: [audio-key-detection]
+  acceptanceCriteria:
+    - 12 chroma bins extracted per segment
+    - stored as feature vector
+    - implements DSPPlugin interface with stage_name=chroma, dependsOn=[key]
+
+- id: audio-harmonic-percussive-split
+  title: Harmonic-percussive separation
+  description: DSP plugin separating harmonic and percussive components using librosa.
+  dependsOn: [audio-normalization-pipeline, audio-feature-cache]
+  acceptanceCriteria:
+    - harmonic and percussive signals separated
+    - stored as artifacts
+    - implements DSPPlugin interface with stage_name=harmonic_percussive_split, dependsOn=[normalization]
+
+- id: audio-loudness-analysis
+  title: Loudness analysis
+  description: DSP plugin measuring integrated loudness using scipy.
+  dependsOn: [audio-normalization-pipeline, audio-feature-cache]
+  acceptanceCriteria:
+    - integrated LUFS measured
+    - dynamic range computed
+    - stored as feature vector
+    - implements DSPPlugin interface with stage_name=loudness, dependsOn=[normalization]
+
+- id: audio-segmentation
+  title: Audio segmentation
+  description: DSP plugin segmenting track into intro, build, breakdown, drop, outro.
+  dependsOn: [audio-waveform-generation]
+  acceptanceCriteria:
+    - segments detected and labeled with start/end times
+    - section labels limited to [intro, build, breakdown, drop, outro]
+    - stored as feature vector
+    - implements DSPPlugin interface with stage_name=segmentation, dependsOn=[waveform]
+
+- id: compare-timbral-similarity
+  title: Timbral similarity comparison
+  description: Compare MFCC and spectral contrast vectors against reference tracks.
+  dependsOn: [audio-mfcc-extraction, audio-spectral-contrast]
+  acceptanceCriteria:
+    - cosine similarity computed between user and reference MFCC vectors
+    - timbral similarity score in range [0, 1]
+    - stored as feature vector
+
+- id: compare-rhythm-similarity
+  title: Rhythm similarity comparison
+  description: Compare BPM and rhythm features against reference tracks.
+  dependsOn: [audio-bpm-detection]
+  acceptanceCriteria:
+    - BPM delta computed between user and reference tracks
+    - rhythm similarity score in range [0, 1]
+    - stored as feature vector
+
+- id: compare-arrangement-similarity
+  title: Arrangement similarity comparison
+  description: Compare segment structure against reference tracks.
+  dependsOn: [audio-segmentation]
+  acceptanceCriteria:
+    - segment sequence compared against reference
+    - arrangement similarity score in range [0, 1]
+    - stored as feature vector
+
+- id: compare-low-end-similarity
+  title: Low-end similarity comparison
+  description: Compare loudness and low-frequency energy against reference tracks.
+  dependsOn: [audio-loudness-analysis]
+  acceptanceCriteria:
+    - low-frequency energy delta computed
+    - low-end similarity score in range [0, 1]
+    - stored as feature vector
+
+- id: compare-drum-similarity
+  title: Drum similarity comparison
+  description: Compare percussive components against reference tracks.
+  dependsOn: [audio-harmonic-percussive-split]
+  acceptanceCriteria:
+    - percussive energy compared against reference
+    - drum similarity score in range [0, 1]
+    - stored as feature vector
+
+- id: score-mix-quality-engine
+  title: Mix quality scoring engine
+  description: Compute weighted mix quality score from timbral and low-end similarity.
+  dependsOn: [compare-timbral-similarity, compare-low-end-similarity]
+  acceptanceCriteria:
+    - mix quality score computed in range [0, 100]
+    - score weighted by timbral and low-end components
+    - score persisted
+
+- id: score-arrangement-quality-engine
+  title: Arrangement quality scoring engine
+  description: Compute arrangement score from arrangement and rhythm similarity.
+  dependsOn: [compare-arrangement-similarity, compare-rhythm-similarity]
+  acceptanceCriteria:
+    - arrangement score computed in range [0, 100]
+    - score persisted
+
+- id: score-sound-design-engine
+  title: Sound design scoring engine
+  description: Compute sound design score from drum similarity.
+  dependsOn: [compare-drum-similarity]
+  acceptanceCriteria:
+    - sound design score computed in range [0, 100]
+    - score persisted
+
+- id: score-label-readiness-engine
+  title: Label readiness scoring engine
+  description: Aggregate mix, arrangement, and sound design scores into a label readiness score.
+  dependsOn: [score-mix-quality-engine, score-arrangement-quality-engine, score-sound-design-engine]
+  acceptanceCriteria:
+    - label readiness score computed in range [0, 100]
+    - component scores visible in output
+    - score persisted
+
+- id: coaching-report-generator
+  title: Coaching report generator
+  description: Generate actionable coaching report from label readiness score and component scores.
+  dependsOn: [score-label-readiness-engine]
+  acceptanceCriteria:
+    - report contains per-dimension feedback (mix, arrangement, sound design)
+    - report contains prioritized action items
+    - report stored in database and retrievable via API
+
+- id: coaching-feedback-collection
+  title: Coaching feedback collection
+  description: API and UI for producers to rate the usefulness of coaching recommendations.
+  dependsOn: [coaching-report-generator]
+  acceptanceCriteria:
+    - POST /feedback records recommendation_usefulness, score_delta, goal_completion
+    - feedback linked to coaching report and user
+    - rate limit enforced
+
+- id: improvement-pattern-analysis
+  title: Improvement pattern analysis
+  description: Learning worker analysis of feedback to identify effective advice and recurring weaknesses.
+  dependsOn: [coaching-feedback-collection, learning-worker-bootstrap]
+  acceptanceCriteria:
+    - analyzes feedback_events, progress_history, goals
+    - identifies which recommendations correlate with score improvement
+    - produces pattern dataset for model training
+
+- id: recommendation-model-training
+  title: Recommendation model training
+  description: Train and publish updated recommendation model using scikit-learn.
+  dependsOn: [improvement-pattern-analysis]
+  acceptanceCriteria:
+    - model trained with scikit-learn on pattern dataset
+    - model version published to recommendation_models table
+    - evaluation metrics (accuracy, precision, recall) recorded
+
+- id: progress-history
+  title: Progress history tracking
+  description: Track score history per producer project over time.
+  dependsOn: [coaching-report-generator]
+  acceptanceCriteria:
+    - progress_history table stores score snapshots per project per analysis
+    - GET /projects/{id}/progress returns time-series of scores
+    - Alembic migration generated
+
+- id: progress-summary-engine
+  title: Progress summary engine
+  description: Compute summary statistics and trends from progress history.
+  dependsOn: [progress-history]
+  acceptanceCriteria:
+    - trend computed (improving, declining, flat)
+    - best and worst scoring dimensions identified
+    - summary returned via API
+
+- id: goal-tracking
+  title: Goal tracking
+  description: Allow producers to set and track improvement goals per dimension.
+  dependsOn: [progress-summary-engine]
+  acceptanceCriteria:
+    - POST /goals creates a goal with target score and dimension
+    - GET /goals returns goals with current progress
+    - goal completion detected automatically when target score reached
+
+- id: platform-auth-ui-progress-charts
+  title: Progress charts UI
+  description: Vue 3 charts showing score history and goal progress using Chart.js.
+  dependsOn: [goal-tracking, progress-summary-engine]
+  acceptanceCriteria:
+    - line chart shows score history over time
+    - goal target shown as reference line
+    - chart updates when new analysis completes
+
+- id: qa-integration-tests
+  title: Cross-service integration tests
+  description: Validate full pipeline from upload to coaching output.
+  dependsOn: [coaching-report-generator, platform-auth-ui-progress-charts]
+  acceptanceCriteria:
+    - upload to analysis to scoring to report flow validated end-to-end
+    - services communicate correctly
+    - pipeline runs in docker-compose environment

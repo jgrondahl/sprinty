@@ -1,0 +1,21 @@
+Fixture task 3 evidence
+
+Command: bun test test/fixtures (in /mnt/c/Users/jgron/Repos/oh-my-splinty)
+Output:
+bun test v1.3.10 (30e609e0)
+
+test\fixtures\fixtures.test.ts:
+(pass) Fixtures — YAML parsing and validation > stories.yaml parses as valid YAML array with 3 stories
+(pass) Fixtures — YAML parsing and validation > stories.yaml has at least one story with dependsOn relationships
+(pass) Fixtures — YAML parsing and validation > single-story.yaml parses as valid array with 1 story [16.00ms]
+(pass) Fixtures — YAML parsing and validation > invalid-story.yaml throws YAML parse error
+(pass) Fixtures — YAML parsing and validation > stories.json is valid JSON with 3 stories
+(pass) Fixtures — YAML parsing and validation > stories.md can be read and contains story sections
+(pass) Fixtures — YAML parsing and validation > violation-code files exist
+
+ 7 pass
+ 0 fail
+ 11 expect() calls
+Ran 7 tests across 1 file. [38.00ms]
+
+Timestamp: 2026-03-25T06:05:00Z

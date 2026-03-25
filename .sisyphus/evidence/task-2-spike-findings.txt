@@ -1,0 +1,18 @@
+Spike task 2 findings (OpenCode session.prompt spike)
+
+Command: bun test spike (in /mnt/c/Users/jgron/Repos/oh-my-splinty)
+Output:
+bun test v1.3.10 (30e609e0)
+
+spike\spike.test.ts:
+(pass) Task 2 API assumption spike > confirms system prompt injection via body.system [47.00ms]
+(pass) Task 2 API assumption spike > confirms tool availability in session prompts [78.00ms]
+(pass) Task 2 API assumption spike > confirms session isolation between two sessions [156.00ms]
+(pass) Task 2 API assumption spike > confirms prompt blocking until tool execution completes [125.00ms]
+
+ 4 pass
+ 0 fail
+ 11 expect() calls
+Ran 4 tests across 1 file. [436.00ms]
+
+Timestamp: 2026-03-25T05:52:00Z

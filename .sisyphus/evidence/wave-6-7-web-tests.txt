@@ -1,0 +1,30 @@
+bun test v1.3.10 (30e609e0)
+
+packages\web\src\App.test.tsx:
+(pass) App > exports a renderable component
+------------------------------------------------|---------|---------|-------------------
+File                                            | % Funcs | % Lines | Uncovered Line #s
+------------------------------------------------|---------|---------|-------------------
+All files                                       |    7.69 |   15.11 |
+ packages\web\src\App.test.tsx                  |  100.00 |  100.00 | 
+ packages\web\src\App.tsx                       |    0.00 |   38.46 | 11-26
+ packages\web\src\components\ProtectedRoute.tsx |    0.00 |   14.29 | 4-15
+ packages\web\src\contexts\AuthContext.tsx      |    0.00 |    6.90 | 16-28,33-38,42-98,102-106
+ packages\web\src\hooks\useMetrics.ts           |    0.00 |    6.00 | 20-66
+ packages\web\src\hooks\useProjectDetails.ts    |    0.00 |    6.00 | 18-64
+ packages\web\src\hooks\useProjects.ts          |    0.00 |    6.98 | 11-50
+ packages\web\src\hooks\useSprintStream.ts      |    0.00 |    7.69 | 11-46
+ packages\web\src\lib\api-client.ts             |   15.38 |    8.13 | 17-21,29-132,136-139
+ packages\web\src\pages\AnalyticsPage.tsx       |    0.00 |    3.85 | 4-18,23-48,53-86
+ packages\web\src\pages\DashboardPage.tsx       |    0.00 |    7.69 | 5-40
+ packages\web\src\pages\LoginPage.tsx           |    0.00 |    5.26 | 5-58
+ packages\web\src\pages\ProjectPage.tsx         |    0.00 |    3.92 | 4-52
+ packages\web\src\pages\RegisterPage.tsx        |    0.00 |    4.35 | 5-70
+ packages\web\src\pages\SprintViewerPage.tsx    |    0.00 |    7.14 | 6-57
+------------------------------------------------|---------|---------|-------------------
+
+ 1 pass
+ 0 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [55.00ms]
+EXIT_CODE=0

@@ -1,0 +1,3 @@
+db EXIT_CODE=0
+api EXIT_CODE=0
+web EXIT_CODE=0

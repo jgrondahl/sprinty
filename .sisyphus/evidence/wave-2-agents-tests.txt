@@ -1,0 +1,435 @@
+bun test v1.3.10 (30e609e0)
+
+packages\agents\src\architect.test.ts:
+(pass) ArchitectAgent > writes architecture.md to workspace artifacts [16.00ms]
+(pass) ArchitectAgent > writes diagram.mmd to workspace artifacts
+(pass) ArchitectAgent > non-audio story: soundEngineerRequired === false in handoff
+(pass) ArchitectAgent > audio story: soundEngineerRequired === true in handoff [15.00ms]
+(pass) ArchitectAgent > soundEngineerRationale is non-empty string for audio story
+(pass) ArchitectAgent > sets soundEngineerRequired true from story tags even if Claude returns false
+(pass) ArchitectAgent > handoff targets DEVELOPER
+(pass) ArchitectAgent > story transitions to IN_PROGRESS [16.00ms]
+(pass) ArchitectAgent > strips markdown code fences from response
+(pass) ArchitectAgent > throws when adr missing from response
+(pass) ArchitectAgent > throws when diagram missing from response
+(pass) ArchitectAgent > throws on non-JSON response [16.00ms]
+(pass) ArchitectAgent > handles null handoff (direct invocation)
+
+packages\agents\src\architecture-planner.test.ts:
+(pass) ArchitecturePlannerAgent > planSprint() produces valid global + sprint plans with passing quality scores [15.00ms]
+(pass) ArchitecturePlannerAgent > planSprint() saves both plans via ArchitecturePlanManager
+(pass) ArchitecturePlannerAgent > planSprint() global plan has level='global' and scopeKey='global' [16.00ms]
+(pass) ArchitecturePlannerAgent > planSprint() sprint plan has level='sprint' and correct sprintId
+(pass) ArchitecturePlannerAgent > planSprint() sprint plan references global plan via parentPlanId [16.00ms]
+(pass) ArchitecturePlannerAgent > execute() extracts stories from handoff stateOfWorld and calls planSprint
+(pass) ArchitecturePlannerAgent > execute() throws on missing projectId in handoff
+(pass) ArchitecturePlannerAgent > execute() throws on missing refinedStories in handoff
+(pass) ArchitecturePlannerAgent > passA extracts domains from all stories
+(pass) ArchitecturePlannerAgent > passB chooses tech stack reflected in final plan [15.00ms]
+(pass) ArchitecturePlannerAgent > passC produces constraints reflected in final plan
+(pass) ArchitecturePlannerAgent > retries failing pass when quality score fails
+(pass) ArchitecturePlannerAgent > throws AgentCallError when all retry attempts exhausted on LLM failure [16.00ms]
+(pass) ArchitecturePlannerAgent > strips markdown fences from LLM responses
+(pass) ArchitecturePlannerAgent > handles existing global plan (evolution mode) [15.00ms]
+(pass) ArchitecturePlannerAgent > sprint plan storyModuleMapping covers all input stories
+(pass) ArchitecturePlannerAgent > reviseSprint > happy path revises sprint plan, appends decision, and supersedes existing plan
+(pass) ArchitecturePlannerAgent > reviseSprint > preserves tech stack from current sprint plan [16.00ms]
+(pass) ArchitecturePlannerAgent > reviseSprint > persists via supersede by staling old plan and creating new plan artifact
+(pass) ArchitecturePlannerAgent > reviseSprint > throws on non-sprint current plan
+(pass) ArchitecturePlannerAgent > reviseSprint > throws without workspace
+(pass) ArchitecturePlannerAgent > reviseSprint > retries on validation failure then succeeds [16.00ms]
+(pass) ArchitecturePlannerAgent > reviseSprint > throws after max retries exhausted
+(pass) ArchitecturePlannerAgent > reviseSprint > includes trigger and evidence in LLM user message
+(pass) ArchitecturePlannerAgent > validates plan and rejects cyclic dependencies [15.00ms]
+
+packages\agents\src\base-agent.test.ts:
+(pass) BaseAgent.callLlm() — retry logic > succeeds on first attempt
+(pass) BaseAgent.callLlm() — retry logic > retries and succeeds on 3rd attempt [16.00ms]
+(pass) BaseAgent.callLlm() — retry logic > throws AgentCallError after maxRetries failures
+(pass) BaseAgent.callLlm() — retry logic > AgentCallError message contains persona and attempt count
+(pass) BaseAgent.callLlm() — retry logic > writes to errors.log after all failures
+(pass) BaseAgent.buildHandoff() > produces a valid HandoffDocument
+(pass) BaseAgent.logActivity() > writes to agent.log [16.00ms]
+
+packages\agents\src\business-owner.test.ts:
+(pass) BusinessOwnerAgent > returns handoff to PRODUCT_OWNER
+(pass) BusinessOwnerAgent > stateOfWorld contains all 4 required keys
+(pass) BusinessOwnerAgent > story state is EPIC (transitioned from RAW) [15.00ms]
+(pass) BusinessOwnerAgent > throws on malformed JSON response
+(pass) BusinessOwnerAgent > handles markdown-fenced JSON from Claude
+
+packages\agents\src\developer.test.ts:
+(pass) DeveloperAgent > writes generated source files to workspace artifacts/src/
+(pass) DeveloperAgent > creates git branch story/{story.id} [16.00ms]
+(pass) DeveloperAgent > commits with correct message feat({id}): {title}
+(pass) DeveloperAgent > does NOT call git.push
+(pass) DeveloperAgent > handoff targets QA_ENGINEER [16.00ms]
+(pass) DeveloperAgent > handoff stateOfWorld contains branchName, commitSha, generatedFiles, testCommand
+(pass) DeveloperAgent > story transitions to IN_REVIEW [15.00ms]
+(pass) DeveloperAgent > throws when files array is empty
+(pass) DeveloperAgent > throws on non-JSON response
+(pass) DeveloperAgent > handles fenced JSON from Claude
+(pass) DeveloperAgent — compile→test→fix loop > retries on build failure and succeeds on second attempt [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > retries on test failure and succeeds [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > exhausts max attempts (3) and passes failures to QA
+(pass) DeveloperAgent — compile→test→fix loop > does not enter fix loop when sandbox succeeds on first run [15.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > records fixAttempts count in handoff stateOfWorld
+(pass) DeveloperAgent — compile→test→fix loop > triggers sandboxConstraintRevision when same resource limit violated 2+ times [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > stops fix loop when LLM returns unusable fix (empty files)
+(pass) DeveloperAgent — compile→test→fix loop > writes fixed files to workspace on successful fix [15.00ms]
+(pass) DeveloperAgent — sandbox integration > runs sandbox install→build→test when sandbox is set [16.00ms]
+(pass) DeveloperAgent — sandbox integration > writes generated files to sandbox before executing commands
+(pass) DeveloperAgent — sandbox integration > serializes sandbox results into handoff stateOfWorld
+(pass) DeveloperAgent — sandbox integration > stops at install when install fails and fix loop exhausts [16.00ms]
+(pass) DeveloperAgent — sandbox integration > stops at build when build fails and fix loop exhausts [15.00ms]
+(pass) DeveloperAgent — sandbox integration > does not include sandbox results when no sandbox is set
+(pass) DeveloperAgent — sandbox integration > calls sandbox.cleanup() even when execution throws [16.00ms]
+(pass) DeveloperAgent — sandbox integration > detects Python stack and uses pip/pytest commands
+(pass) DeveloperAgent — sandbox integration > initializes sandbox with config when sandboxConfig is provided
+(pass) DeveloperAgent — architecture enforcement > skips enforcement when no enforcer is set [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > passes enforcement report in handoff when enforcer is set and passes
+(pass) DeveloperAgent — architecture enforcement > runs architecture fix when enforcer fails, then passes on retry [15.00ms]
+(pass) DeveloperAgent — architecture enforcement > exhausts max architecture fix attempts and passes failures to QA [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > proceeds to sandbox after enforcement passes
+(pass) DeveloperAgent — architecture enforcement > enforcement warnings pass through to QA without triggering fix loop
+(pass) DeveloperAgent — architecture enforcement > stops fix loop when architecture fix LLM returns empty files [15.00ms]
+(pass) DeveloperAgent — architecture enforcement > enforcement blocks sandbox when fix loop is exhausted
+(pass) DeveloperAgent — rework with diffs > rework cycle generates diffs for modified files [16.00ms]
+(pass) DeveloperAgent — rework with diffs > rework with new files has no diffs for new files
+(pass) DeveloperAgent — rework with diffs > non-rework cycle does not generate diffs [16.00ms]
+(pass) DeveloperAgent — rework with diffs > falls back to full regeneration when patch apply fails
+(pass) DeveloperAgent — task context prompt injection > injects task description into LLM user message when handoff has task ref
+(pass) DeveloperAgent — task context prompt injection > injects relevant files section into LLM user message when projectContext has files
+(pass) DeveloperAgent — task context prompt injection > does not inject task context section when handoff has no task ref [15.00ms]
+(pass) DeveloperAgent — task context prompt injection > does not inject relevant files section when projectContext is absent [16.00ms]
+(pass) DeveloperAgent — task context prompt injection > injects only populated optional task fields and omits empty ones
+
+packages\agents\src\gate.test.ts:
+(pass) SprintOrchestrator gate checks > gate 'never' skips approval
+(pass) SprintOrchestrator gate checks > gate 'always' calls approval
+(pass) SprintOrchestrator gate checks > gate 'always' denial throws GateRejectedError
+(pass) SprintOrchestrator gate checks > gate 'on-cross-service' skips when single service
+
+packages\agents\src\infrastructure-engineer.test.ts:
+(pass) InfrastructureEngineerAgent > generates all artifact files
+(pass) InfrastructureEngineerAgent > handles missing optional deployManifest [15.00ms]
+(pass) InfrastructureEngineerAgent > throws on missing dockerCompose
+(pass) InfrastructureEngineerAgent > handoff has correct fromAgent/toAgent
+
+packages\agents\src\integration-test-engineer.test.ts:
+(pass) IntegrationTestEngineerAgent > generates test scripts
+(pass) IntegrationTestEngineerAgent > generates runner.sh when testRunner present [16.00ms]
+(pass) IntegrationTestEngineerAgent > omits runner.sh when testRunner absent
+(pass) IntegrationTestEngineerAgent > throws on missing tests array
+(pass) IntegrationTestEngineerAgent > executes tests via sandbox when sandbox is set
+
+packages\agents\src\migration-engineer.test.ts:
+(pass) MigrationEngineerAgent > generates up and down SQL files for each migration [15.00ms]
+(pass) MigrationEngineerAgent > handles missing optional seedData
+(pass) MigrationEngineerAgent > throws on missing migrations array
+(pass) MigrationEngineerAgent > handoff has correct toAgent [16.00ms]
+
+packages\agents\src\orchestrator.test.ts:
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > runs full pipeline and returns AppBuilderResult [31.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > story reaches PR_OPEN state in workspace [32.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > AGENTS.md is created and contains the story [31.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > commitSha is captured from Developer git commit [31.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > calls createPullRequest hook and captures prUrl [16.00ms]
+(pass) SprintOrchestrator — audio story > invokes Sound Engineer when archResp.soundEngineerRequired is true [31.00ms]
+[Splinty] Story story-fail BLOCKED: Agent BUSINESS_OWNER failed after 3 attempt(s): LLM failure for story-A
+(pass) SprintOrchestrator — per-story isolation > failed story does not block successful story [3062.00ms]
+[Splinty] Story story-2: 2 file(s) not retrieved by developer
+⚠ Retrieval failure rate: 50% (threshold: 15%)
+  - 1/2 retrieval attempts failed to locate needed files
+  - Most missed: src/auth/service.test.ts (1x), src/auth/service.ts (1x)
+
+  Recommendation: Enable hybrid retrieval with semantic embeddings.
+  Run: splinty config set retrieval.mode hybrid
+(pass) SprintOrchestrator — per-story isolation > multiple stories in same batch all get results [141.00ms]
+(pass) Phase 2 orchestrator integration > runs stories in topological order and creates project workspace
+(pass) Phase 2 orchestrator integration > writes story manifest and promotes source files at PR_OPEN [31.00ms]
+(pass) Phase 2 orchestrator integration > injects ProjectContext into developer handoff in story pipeline [16.00ms]
+[Splinty] Story story-orch BLOCKED: Story story-orch QA BLOCKED: Given valid creds, When I submit, Then I receive JWT
+(pass) SprintOrchestrator — QA rework loop > handles QA BLOCKED verdict by returning failed result [31.00ms]
+(pass) SprintOrchestrator — QA rework loop > QA FAIL triggers developer rework, then PASS succeeds [31.00ms]
+(pass) SprintOrchestrator — configurable pipeline > skips a step when condition returns false [16.00ms]
+(pass) SprintOrchestrator — configurable pipeline > runs agents in custom pipeline order [31.00ms]
+[Splinty] Story story-qa-retries-override BLOCKED: Cannot transition from IN_REVIEW to PR_OPEN
+(pass) SprintOrchestrator — configurable pipeline > honors retries override on QA step [16.00ms]
+(pass) SprintOrchestrator — ledger init > creates AGENTS.md even if projectId directory does not exist [31.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > wires sandbox to DeveloperAgent and sandbox results flow through pipeline [31.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > pipeline succeeds even when sandbox is not provided (backwards compatible) [32.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > passes sandboxConfig to sandbox.init() when provided [109.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > accepts enforcer config without breaking story-mode pipeline [31.00ms]
+[Splinty] Story story-orch BLOCKED: Agent TECHNICAL_WRITER failed after 3 attempt(s): Simulated crash after QA pass
+(pass) SprintOrchestrator — resume points > persists a resume point after major steps before a crash [3032.00ms]
+(pass) SprintOrchestrator — resume points > clears resume point on successful pipeline completion [31.00ms]
+(pass) SprintOrchestrator — resume points > resumes from saved point and skips completed early steps [15.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > happy path runs end-to-end planned sprint across two stories [47.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > routes by executionMode to planned-sprint or story pipeline
+(pass) SprintOrchestrator — planned-sprint mode > marks blocked task and continues remaining tasks [32.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > resumes from checkpoint by skipping completed groups [31.00ms]
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop applies sprint-level revision within limits
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop calls humanGate when sprint limit exceeded
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop calls humanGate for global-level revision [15.00ms]
+(pass) SprintOrchestrator — revision loop and checkpoint > executeRevisionLoop returns unchanged state when humanGate denies approval
+(pass) SprintOrchestrator — revision loop and checkpoint > executeRevisionLoop proceeds when humanGate approves global escalation
+(pass) SprintOrchestrator — revision loop and checkpoint > checkpoint save and load roundtrip persists sprint checkpoint
+(pass) SprintOrchestrator — model config > applies defaultModel to all agents when set [32.00ms]
+(pass) SprintOrchestrator — model config > applies defaultModel with temperature override to all agents [15.00ms]
+(pass) SprintOrchestrator — model config > applies per-persona override via models config [32.00ms]
+(pass) SprintOrchestrator — model config > lightModel backward compat applies to QA when models[QA] not set [15.00ms]
+(pass) SprintOrchestrator — model config > rejects empty projectId via Zod validation
+(pass) SprintOrchestrator — model config > rejects invalid temperature via Zod validation
+(pass) SprintOrchestrator — writeBackStory hook > accepts writeBackStory callback in config and stores reference
+(pass) SprintOrchestrator — writeBackStory hook > config accepts writeBackStory with minimal types [16.00ms]
+(pass) SprintOrchestrator — writeBackStory hook > invokes writeBackStory after createPullRequest in story pipeline [47.00ms]
+(pass) SprintOrchestrator — writeBackStory hook > invokes writeBackStory after createPullRequest in planned-sprint pipeline [15.00ms]
+[orchestrator] write-back failed: warn: Simulated write-back failure
+      at writeBackStory (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.test.ts:1770:15)
+      at runStory (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.ts:1465:27)
+      at async run (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.ts:485:33)
+      at async <anonymous> (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.test.ts:1774:32)
+
+(pass) SprintOrchestrator — writeBackStory hook > does not throw if writeBackStory callback fails [32.00ms]
+
+packages\agents\src\product-owner.test.ts:
+(pass) ProductOwnerAgent > transitions story from EPIC to USER_STORY [15.00ms]
+(pass) ProductOwnerAgent > populates acceptanceCriteria with at least 1 Gherkin scenario
+(pass) ProductOwnerAgent > populates domain and tags from Claude response
+(pass) ProductOwnerAgent > returns handoff to ORCHESTRATOR
+(pass) ProductOwnerAgent > stateOfWorld includes priority and storyPoints
+(pass) ProductOwnerAgent > handles null handoff (no business context) [16.00ms]
+(pass) ProductOwnerAgent > strips markdown code fences from Claude response
+(pass) ProductOwnerAgent > throws when Claude returns non-JSON
+(pass) ProductOwnerAgent > throws when acceptanceCriteria is empty array
+(pass) ProductOwnerAgent > throws when priority is missing
+
+packages\agents\src\qa-engineer.test.ts:
+(pass) QAEngineerAgent — PASS verdict > transitions story to DONE on PASS [15.00ms]
+(pass) QAEngineerAgent — PASS verdict > handoff targets ORCHESTRATOR on PASS
+(pass) QAEngineerAgent — PASS verdict > stateOfWorld.verdict === PASS [16.00ms]
+(pass) QAEngineerAgent — PASS verdict > writes QA report to artifacts/qa-report.md on PASS
+(pass) QAEngineerAgent — PASS verdict > writes additional test files to artifacts/src/__tests__/
+(pass) QAEngineerAgent — PASS verdict > stateOfWorld contains branchName on PASS [16.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > transitions story back to IN_PROGRESS on FAIL
+(pass) QAEngineerAgent — FAIL verdict (rework) > handoff targets DEVELOPER on FAIL (first rework)
+(pass) QAEngineerAgent — FAIL verdict (rework) > increments reworkCount in stateOfWorld [15.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > stateOfWorld contains failedAC on FAIL
+(pass) QAEngineerAgent — FAIL verdict (rework) > escalates to BLOCKED after exceeding max rework cycles [16.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > story stays in IN_REVIEW when max rework cycles exceeded
+(pass) QAEngineerAgent — BLOCKED verdict > story stays IN_REVIEW on BLOCKED
+(pass) QAEngineerAgent — BLOCKED verdict > handoff targets ORCHESTRATOR on BLOCKED [16.00ms]
+(pass) QAEngineerAgent — error handling > throws on non-JSON response
+(pass) QAEngineerAgent — error handling > throws when verdict is invalid
+(pass) QAEngineerAgent — error handling > handles fenced JSON from Claude [15.00ms]
+(pass) QAEngineerAgent — error handling > works when no source files listed in handoff
+(pass) QAEngineerAgent — sandbox results > includes sandbox results in LLM prompt when present in handoff
+(pass) QAEngineerAgent — sandbox results > shows FAILED status for failed sandbox steps [16.00ms]
+(pass) QAEngineerAgent — sandbox results > does not include sandbox section when no sandbox results in handoff
+
+packages\agents\src\sound-engineer.test.ts:
+(pass) SoundEngineerAgent — skip (non-audio) > returns SKIPPED handoff when soundEngineerRequired === false
+(pass) SoundEngineerAgent — skip (non-audio) > returns SKIPPED when handoff is null [15.00ms]
+(pass) SoundEngineerAgent — skip (non-audio) > SKIPPED handoff targets DEVELOPER
+(pass) SoundEngineerAgent — Python audio path > writes audio_service.py to workspace artifacts
+(pass) SoundEngineerAgent — Python audio path > writes requirements.txt with librosa
+(pass) SoundEngineerAgent — Python audio path > writes audio-design.md
+(pass) SoundEngineerAgent — Python audio path > handoff stateOfWorld.requiresPython === true [16.00ms]
+(pass) SoundEngineerAgent — Python audio path > handoff targets DEVELOPER
+(pass) SoundEngineerAgent — TypeScript audio path > writes TS audio module when Python not required [16.00ms]
+(pass) SoundEngineerAgent — TypeScript audio path > handoff stateOfWorld.requiresPython === false for TS path
+(pass) SoundEngineerAgent — error handling > throws on non-JSON response
+(pass) SoundEngineerAgent — error handling > throws when audioDesign is missing
+
+packages\agents\src\technical-writer.test.ts:
+(pass) TechnicalWriterAgent > writes README.md to artifacts/ [15.00ms]
+(pass) TechnicalWriterAgent > handoff targets ORCHESTRATOR
+(pass) TechnicalWriterAgent > stateOfWorld contains readmePath
+(pass) TechnicalWriterAgent > carries forward branchName and commitSha [16.00ms]
+(pass) TechnicalWriterAgent > writes additional docs when provided
+(pass) TechnicalWriterAgent > throws on non-JSON response
+(pass) TechnicalWriterAgent > throws when readme is empty/missing
+(pass) TechnicalWriterAgent > handles fenced JSON from LLM [16.00ms]
+(pass) TechnicalWriterAgent > works without workspace (no crash)
+
+packages\agents\src\providers\anthropic-client.test.ts:
+(pass) AnthropicClient.complete() > returns text from the first text block
+(pass) AnthropicClient.complete() > passes model, temperature, maxTokens, system and user message to SDK
+(pass) AnthropicClient.complete() > uses default maxTokens=4096 and temperature=0.7 when not provided
+(pass) AnthropicClient.complete() > throws when the response contains no text block
+(pass) AnthropicClient.complete() > propagates SDK errors
+
+packages\agents\src\providers\github-copilot-client.test.ts:
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: ABCD-1234
+
+Waiting for authorization...
+(pass) runDeviceFlow() > requests a device code, then polls and returns the access token
+GitHub Copilot authorization successful.
+(pass) runDeviceFlow() > retries on authorization_pending before succeeding
+
+To connect Splinty to GitHub Copilot:
+(pass) runDeviceFlow() > handles slow_down by increasing interval
+  1. Open: https://github.com/login/device
+  2. Enter code: XXXX-9999
+
+Waiting for authorization...
+(pass) runDeviceFlow() > throws on expired_token error
+GitHub Copilot authorization successful.
+(pass) runDeviceFlow() > throws on access_denied error
+
+To connect Splinty to GitHub Copilot:
+(pass) runDeviceFlow() > throws when device code request fails
+  1. Open: https://github.com/login/device
+  2. Enter code: SLOW-1234
+
+Waiting for authorization...
+(pass) GitHubCopilotClient — constructor & auth state > is not authenticated when no token file exists
+GitHub Copilot authorization successful.
+(pass) GitHubCopilotClient — constructor & auth state > is authenticated when token is passed directly
+
+To connect Splinty to GitHub Copilot:
+(pass) GitHubCopilotClient — constructor & auth state > is authenticated when token file exists on disk
+  1. Open: https://github.com/login/device
+  2. Enter code: EXPD-1234
+
+Waiting for authorization...
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: DENY-1234
+
+Waiting for authorization...
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: LGNI-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+(pass) GitHubCopilotClient.login() > runs device flow and persists token to disk [4000.00ms]
+Already authenticated with GitHub Copilot.
+(pass) GitHubCopilotClient.login() > skips device flow when token already exists (no force)
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: FORC-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+(pass) GitHubCopilotClient.login() > re-runs device flow when force=true even if token exists [4000.00ms]
+GitHub Copilot token removed.
+GitHub Copilot token removed.
+(pass) GitHubCopilotClient.logout() > removes the token file and marks client as not authenticated
+(pass) GitHubCopilotClient.logout() > does not throw when token file does not exist
+(pass) GitHubCopilotClient.complete() > throws with helpful message when not authenticated
+(pass) GitHubCopilotClient.complete() > sends POST with correct Copilot headers and body
+(pass) GitHubCopilotClient.complete() > returns the content string from choices[0].message.content
+(pass) GitHubCopilotClient.complete() > passes maxTokens and temperature to the request body
+(pass) GitHubCopilotClient.complete() > throws with re-auth hint on 401 and clears bad token
+(pass) GitHubCopilotClient.complete() > throws on non-ok HTTP response (500)
+(pass) GitHubCopilotClient.complete() > throws when choices[0].message.content is null
+(pass) GitHubCopilotClient.complete() > throws when choices array is empty
+(pass) GitHubCopilotClient.complete() > uses token from disk cache when no token passed in constructor
+
+packages\agents\src\__tests__\cross-story.integration.test.ts:
+[Splinty] Story story-2: 2 file(s) not retrieved by developer
+⚠ Retrieval failure rate: 50% (threshold: 15%)
+  - 1/2 retrieval attempts failed to locate needed files
+  - Most missed: src/auth/service.test.ts (1x), src/auth/service.ts (1x)
+
+  Recommendation: Enable hybrid retrieval with semantic embeddings.
+  Run: splinty config set retrieval.mode hybrid
+(pass) cross-story integration > Story 2 depends on Story 1: stories run in order, Story 1 files promoted, Story 2 receives projectContext [47.00ms]
+(pass) cross-story integration > file conflict detection emits console.warn when two stories claim the same file
+(pass) cross-story integration > retrieval tracker emits console.warn when developer does not retrieve requested files [47.00ms]
+
+packages\agents\src\__tests__\pipeline.integration.test.ts:
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > FileConnector parses sample-story.md into Story[]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > full pipeline: story reaches PR_OPEN state [31.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > workspace directory structure is created (handoffs/, artifacts/, agent.log) [16.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > AGENTS.md is created and contains the story entry [31.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > result contains commitSha from Developer git commit [32.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > createPullRequest hook is called and prUrl is non-empty [15.00ms]
+---------------------------------------------------------------|---------|---------|-------------------
+File                                                           | % Funcs | % Lines | Uncovered Line #s
+---------------------------------------------------------------|---------|---------|-------------------
+All files                                                      |   74.73 |   81.78 |
+ packages\agents\src\__tests__\cross-story.integration.test.ts |   96.55 |  100.00 | 
+ packages\agents\src\__tests__\pipeline.integration.test.ts    |   95.83 |  100.00 | 
+ packages\agents\src\architect.test.ts                         |   92.11 |  100.00 | 
+ packages\agents\src\architect.ts                              |   66.67 |  100.00 | 
+ packages\agents\src\architecture-planner.test.ts              |  100.00 |  100.00 | 
+ packages\agents\src\architecture-planner.ts                   |  100.00 |  100.00 | 
+ packages\agents\src\base-agent.test.ts                        |   96.55 |  100.00 | 
+ packages\agents\src\base-agent.ts                             |  100.00 |  100.00 | 
+ packages\agents\src\business-owner.test.ts                    |   94.74 |  100.00 | 
+ packages\agents\src\business-owner.ts                         |   66.67 |  100.00 | 
+ packages\agents\src\developer.test.ts                         |   97.67 |  100.00 | 
+ packages\agents\src\developer.ts                              |   96.15 |  100.00 | 
+ packages\agents\src\gate.test.ts                              |  100.00 |  100.00 | 
+ packages\agents\src\index.ts                                  |  100.00 |  100.00 | 
+ packages\agents\src\infrastructure-engineer.test.ts           |  100.00 |  100.00 | 
+ packages\agents\src\infrastructure-engineer.ts                |  100.00 |   88.54 | 77-79,84,90,95-97,100-102
+ packages\agents\src\integration-test-engineer.test.ts         |  100.00 |  100.00 | 
+ packages\agents\src\integration-test-engineer.ts              |  100.00 |  100.00 | 
+ packages\agents\src\migration-engineer.test.ts                |  100.00 |  100.00 | 
+ packages\agents\src\migration-engineer.ts                     |  100.00 |   86.81 | 84-86,96-98,101-103,106-108
+ packages\agents\src\orchestrator.test.ts                      |   96.59 |   98.87 | 620-621,1082-1089,1118-1119,1659-1662
+ packages\agents\src\orchestrator.ts                           |   88.46 |   98.04 | 89-100,235,239-252
+ packages\agents\src\product-owner.test.ts                     |   96.67 |  100.00 | 
+ packages\agents\src\product-owner.ts                          |   66.67 |  100.00 | 
+ packages\agents\src\providers\anthropic-client.test.ts        |  100.00 |  100.00 | 
+ packages\agents\src\providers\anthropic-client.ts             |  100.00 |  100.00 | 
+ packages\agents\src\providers\github-copilot-client.test.ts   |   97.37 |   99.43 | 66
+ packages\agents\src\providers\github-copilot-client.ts        |   82.35 |   99.41 | 
+ packages\agents\src\providers\index.ts                        |  100.00 |  100.00 | 
+ packages\agents\src\qa-engineer.test.ts                       |   96.72 |  100.00 | 
+ packages\agents\src\qa-engineer.ts                            |   75.00 |  100.00 | 
+ packages\agents\src\sound-engineer.test.ts                    |   94.74 |  100.00 | 
+ packages\agents\src\sound-engineer.ts                         |   75.00 |   97.53 | 62
+ packages\agents\src\technical-writer.test.ts                  |   93.10 |  100.00 | 
+ packages\agents\src\technical-writer.ts                       |   66.67 |   98.97 | 
+ packages\core\src\architecture-enforcer.ts                    |    5.26 |   12.35 | 91,100-108,112-126,130-150,154-159,163-180,184-231,235-251,255,258-270,277-359,363-408,412-464,468-491,495-586
+ packages\core\src\architecture-plan.ts                        |   71.43 |   88.32 | 219-223,227-244
+ packages\core\src\cli-human-gate.ts                           |    0.00 |   13.64 | 5-23
+ packages\core\src\diff.ts                                     |   85.71 |   86.49 | 106-110,115-119,130-131,143-147,150-151,161-162,177-182,220-221,227-228,259,284-285,294-295,350,358-360
+ packages\core\src\fs-storage-adapter.ts                       |   84.62 |   44.44 | 63-107
+ packages\core\src\handoff.ts                                  |   33.33 |   35.56 | 53-62,70-82,90-101,109-131
+ packages\core\src\import-graph.ts                             |   57.14 |   54.31 | 69-104,123,127-142
+ packages\core\src\index.ts                                    |  100.00 |  100.00 | 
+ packages\core\src\integration-sandbox-docker.ts               |    0.00 |   10.00 | 12,16-27,32-97,101-127,132-133
+ packages\core\src\integration-sandbox-mock.ts                 |   33.33 |   66.67 | 22-26,30,49-52
+ packages\core\src\ledger.ts                                   |   91.67 |   78.95 | 55-74
+ packages\core\src\llm-client.ts                               |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.ts                            |   30.00 |   52.00 | 15-28,32-34,87-93,148-168,180,200,212-221,229,243-280,284-317,339
+ packages\core\src\plan-validation.ts                          |   81.08 |   61.75 | 59,66-68,70-72,84-85,93,108-111,154,188,210-212,265,279-283,332-333,336-337,393-420,426-547
+ packages\core\src\project-context.ts                          |   80.00 |   81.20 | 112-133
+ packages\core\src\project-memory.ts                           |   71.43 |   85.64 | 185-187,191-193,197-211,224-228
+ packages\core\src\resume.ts                                   |  100.00 |  100.00 | 
+ packages\core\src\retrieval-tracking.ts                       |   81.25 |   95.35 | 43-47
+ packages\core\src\sandbox-mock.ts                             |   92.31 |   83.54 | 85-97
+ packages\core\src\sandbox.ts                                  |    0.00 |   38.10 | 120-121,127-132,138-142
+ packages\core\src\service-guard.ts                            |    0.00 |   25.00 | 14-15,20-21,26-32,40-58
+ packages\core\src\sprint-state.ts                             |   57.14 |   92.65 | 52-55
+ packages\core\src\storage-adapter.ts                          |  100.00 |  100.00 | 
+ packages\core\src\story-dependencies.ts                       |   53.85 |   53.28 | 3-54,60,118-128
+ packages\core\src\story-state-machine.ts                      |   50.00 |   95.74 | 55
+ packages\core\src\task-decomposition.ts                       |    5.88 |   14.77 | 86-88,92-98,102-107,112-118,122-125,129-134,138-144,148-154,158-181,185-252,263-422,427-453,457-508,512-580,584-586
+ packages\core\src\telemetry-retention.ts                      |   71.43 |   82.00 | 56-64
+ packages\core\src\types.ts                                    |  100.00 |  100.00 | 
+ packages\core\src\workspace.ts                                |   70.83 |   66.19 | 9-10,16-17,127-160,249,253,257-281,285-290
+ packages\integrations\src\file.ts                             |   41.67 |   65.38 | 14-17,143-151,155-163,167-189
+ packages\integrations\src\github.ts                           |    0.00 |    4.96 | 32-57,64-152
+ packages\integrations\src\index.ts                            |  100.00 |  100.00 | 
+ packages\integrations\src\jira.ts                             |    0.00 |    5.45 | 42-43,49-50,56-57,84-112,120-159,167-195,205-223,230-408,412-421
+---------------------------------------------------------------|---------|---------|-------------------
+
+ 245 pass
+ 0 fail
+ 519 expect() calls
+Ran 245 tests across 18 files. [16.48s]
+EXIT_CODE=0

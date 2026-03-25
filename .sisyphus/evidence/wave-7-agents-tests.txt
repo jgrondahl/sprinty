@@ -1,0 +1,4 @@
+Command: bun test packages/agents
+Result: PASS
+Summary: 247 pass, 0 fail, 523 expect() calls
+EXIT_CODE=0

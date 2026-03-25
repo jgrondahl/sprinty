@@ -1,0 +1,1694 @@
+bun test v1.3.10 (30e609e0)
+
+packages\agents\src\architect.test.ts:
+(pass) ArchitectAgent > writes architecture.md to workspace artifacts [16.00ms]
+(pass) ArchitectAgent > writes diagram.mmd to workspace artifacts
+(pass) ArchitectAgent > non-audio story: soundEngineerRequired === false in handoff
+(pass) ArchitectAgent > audio story: soundEngineerRequired === true in handoff [16.00ms]
+(pass) ArchitectAgent > soundEngineerRationale is non-empty string for audio story
+(pass) ArchitectAgent > sets soundEngineerRequired true from story tags even if Claude returns false [15.00ms]
+(pass) ArchitectAgent > handoff targets DEVELOPER
+(pass) ArchitectAgent > story transitions to IN_PROGRESS
+(pass) ArchitectAgent > strips markdown code fences from response [16.00ms]
+(pass) ArchitectAgent > throws when adr missing from response
+(pass) ArchitectAgent > throws when diagram missing from response
+(pass) ArchitectAgent > throws on non-JSON response [16.00ms]
+(pass) ArchitectAgent > handles null handoff (direct invocation)
+
+packages\agents\src\architecture-planner.test.ts:
+(pass) ArchitecturePlannerAgent > planSprint() produces valid global + sprint plans with passing quality scores [15.00ms]
+(pass) ArchitecturePlannerAgent > planSprint() saves both plans via ArchitecturePlanManager [16.00ms]
+(pass) ArchitecturePlannerAgent > planSprint() global plan has level='global' and scopeKey='global'
+(pass) ArchitecturePlannerAgent > planSprint() sprint plan has level='sprint' and correct sprintId [15.00ms]
+(pass) ArchitecturePlannerAgent > planSprint() sprint plan references global plan via parentPlanId
+(pass) ArchitecturePlannerAgent > execute() extracts stories from handoff stateOfWorld and calls planSprint
+(pass) ArchitecturePlannerAgent > execute() throws on missing projectId in handoff [16.00ms]
+(pass) ArchitecturePlannerAgent > execute() throws on missing refinedStories in handoff
+(pass) ArchitecturePlannerAgent > passA extracts domains from all stories
+(pass) ArchitecturePlannerAgent > passB chooses tech stack reflected in final plan [16.00ms]
+(pass) ArchitecturePlannerAgent > passC produces constraints reflected in final plan [15.00ms]
+(pass) ArchitecturePlannerAgent > retries failing pass when quality score fails
+(pass) ArchitecturePlannerAgent > throws AgentCallError when all retry attempts exhausted on LLM failure [16.00ms]
+(pass) ArchitecturePlannerAgent > strips markdown fences from LLM responses
+(pass) ArchitecturePlannerAgent > handles existing global plan (evolution mode) [16.00ms]
+(pass) ArchitecturePlannerAgent > sprint plan storyModuleMapping covers all input stories
+(pass) ArchitecturePlannerAgent > reviseSprint > happy path revises sprint plan, appends decision, and supersedes existing plan [15.00ms]
+(pass) ArchitecturePlannerAgent > reviseSprint > preserves tech stack from current sprint plan
+(pass) ArchitecturePlannerAgent > reviseSprint > persists via supersede by staling old plan and creating new plan artifact [16.00ms]
+(pass) ArchitecturePlannerAgent > reviseSprint > throws on non-sprint current plan
+(pass) ArchitecturePlannerAgent > reviseSprint > throws without workspace
+(pass) ArchitecturePlannerAgent > reviseSprint > retries on validation failure then succeeds [15.00ms]
+(pass) ArchitecturePlannerAgent > reviseSprint > throws after max retries exhausted
+(pass) ArchitecturePlannerAgent > reviseSprint > includes trigger and evidence in LLM user message
+(pass) ArchitecturePlannerAgent > validates plan and rejects cyclic dependencies [16.00ms]
+
+packages\agents\src\base-agent.test.ts:
+(pass) BaseAgent.callLlm() — retry logic > succeeds on first attempt [16.00ms]
+(pass) BaseAgent.callLlm() — retry logic > retries and succeeds on 3rd attempt
+(pass) BaseAgent.callLlm() — retry logic > throws AgentCallError after maxRetries failures
+(pass) BaseAgent.callLlm() — retry logic > AgentCallError message contains persona and attempt count [15.00ms]
+(pass) BaseAgent.callLlm() — retry logic > writes to errors.log after all failures
+(pass) BaseAgent.buildHandoff() > produces a valid HandoffDocument
+(pass) BaseAgent.logActivity() > writes to agent.log
+
+packages\agents\src\business-owner.test.ts:
+(pass) BusinessOwnerAgent > returns handoff to PRODUCT_OWNER [16.00ms]
+(pass) BusinessOwnerAgent > stateOfWorld contains all 4 required keys
+(pass) BusinessOwnerAgent > story state is EPIC (transitioned from RAW)
+(pass) BusinessOwnerAgent > throws on malformed JSON response
+(pass) BusinessOwnerAgent > handles markdown-fenced JSON from Claude [16.00ms]
+
+packages\agents\src\developer.test.ts:
+(pass) DeveloperAgent > writes generated source files to workspace artifacts/src/ [15.00ms]
+(pass) DeveloperAgent > creates git branch story/{story.id}
+(pass) DeveloperAgent > commits with correct message feat({id}): {title}
+(pass) DeveloperAgent > does NOT call git.push [16.00ms]
+(pass) DeveloperAgent > handoff targets QA_ENGINEER [16.00ms]
+(pass) DeveloperAgent > handoff stateOfWorld contains branchName, commitSha, generatedFiles, testCommand
+(pass) DeveloperAgent > story transitions to IN_REVIEW [15.00ms]
+(pass) DeveloperAgent > throws when files array is empty
+(pass) DeveloperAgent > throws on non-JSON response [16.00ms]
+(pass) DeveloperAgent > handles fenced JSON from Claude [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > retries on build failure and succeeds on second attempt [15.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > retries on test failure and succeeds
+(pass) DeveloperAgent — compile→test→fix loop > exhausts max attempts (3) and passes failures to QA [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > does not enter fix loop when sandbox succeeds on first run [15.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > records fixAttempts count in handoff stateOfWorld [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > triggers sandboxConstraintRevision when same resource limit violated 2+ times [16.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > stops fix loop when LLM returns unusable fix (empty files) [15.00ms]
+(pass) DeveloperAgent — compile→test→fix loop > writes fixed files to workspace on successful fix
+(pass) DeveloperAgent — sandbox integration > runs sandbox install→build→test when sandbox is set [16.00ms]
+(pass) DeveloperAgent — sandbox integration > writes generated files to sandbox before executing commands
+(pass) DeveloperAgent — sandbox integration > serializes sandbox results into handoff stateOfWorld [16.00ms]
+(pass) DeveloperAgent — sandbox integration > stops at install when install fails and fix loop exhausts [15.00ms]
+(pass) DeveloperAgent — sandbox integration > stops at build when build fails and fix loop exhausts [16.00ms]
+(pass) DeveloperAgent — sandbox integration > does not include sandbox results when no sandbox is set
+(pass) DeveloperAgent — sandbox integration > calls sandbox.cleanup() even when execution throws [15.00ms]
+(pass) DeveloperAgent — sandbox integration > detects Python stack and uses pip/pytest commands
+(pass) DeveloperAgent — sandbox integration > initializes sandbox with config when sandboxConfig is provided [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > skips enforcement when no enforcer is set
+(pass) DeveloperAgent — architecture enforcement > passes enforcement report in handoff when enforcer is set and passes [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > runs architecture fix when enforcer fails, then passes on retry
+(pass) DeveloperAgent — architecture enforcement > exhausts max architecture fix attempts and passes failures to QA [15.00ms]
+(pass) DeveloperAgent — architecture enforcement > proceeds to sandbox after enforcement passes [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > enforcement warnings pass through to QA without triggering fix loop
+(pass) DeveloperAgent — architecture enforcement > stops fix loop when architecture fix LLM returns empty files [16.00ms]
+(pass) DeveloperAgent — architecture enforcement > enforcement blocks sandbox when fix loop is exhausted [15.00ms]
+(pass) DeveloperAgent — rework with diffs > rework cycle generates diffs for modified files
+(pass) DeveloperAgent — rework with diffs > rework with new files has no diffs for new files [16.00ms]
+(pass) DeveloperAgent — rework with diffs > non-rework cycle does not generate diffs
+(pass) DeveloperAgent — rework with diffs > falls back to full regeneration when patch apply fails [15.00ms]
+(pass) DeveloperAgent — task context prompt injection > injects task description into LLM user message when handoff has task ref
+(pass) DeveloperAgent — task context prompt injection > injects relevant files section into LLM user message when projectContext has files [16.00ms]
+(pass) DeveloperAgent — task context prompt injection > does not inject task context section when handoff has no task ref
+(pass) DeveloperAgent — task context prompt injection > does not inject relevant files section when projectContext is absent
+(pass) DeveloperAgent — task context prompt injection > injects only populated optional task fields and omits empty ones [16.00ms]
+
+packages\agents\src\gate.test.ts:
+(pass) SprintOrchestrator gate checks > gate 'never' skips approval
+(pass) SprintOrchestrator gate checks > gate 'always' calls approval
+(pass) SprintOrchestrator gate checks > gate 'always' denial throws GateRejectedError
+(pass) SprintOrchestrator gate checks > gate 'on-cross-service' skips when single service
+
+packages\agents\src\infrastructure-engineer.test.ts:
+(pass) InfrastructureEngineerAgent > generates all artifact files [16.00ms]
+(pass) InfrastructureEngineerAgent > handles missing optional deployManifest
+(pass) InfrastructureEngineerAgent > throws on missing dockerCompose
+(pass) InfrastructureEngineerAgent > handoff has correct fromAgent/toAgent
+
+packages\agents\src\integration-test-engineer.test.ts:
+(pass) IntegrationTestEngineerAgent > generates test scripts
+(pass) IntegrationTestEngineerAgent > generates runner.sh when testRunner present [15.00ms]
+(pass) IntegrationTestEngineerAgent > omits runner.sh when testRunner absent
+(pass) IntegrationTestEngineerAgent > throws on missing tests array
+(pass) IntegrationTestEngineerAgent > executes tests via sandbox when sandbox is set [16.00ms]
+
+packages\agents\src\migration-engineer.test.ts:
+(pass) MigrationEngineerAgent > generates up and down SQL files for each migration
+(pass) MigrationEngineerAgent > handles missing optional seedData [15.00ms]
+(pass) MigrationEngineerAgent > throws on missing migrations array
+(pass) MigrationEngineerAgent > handoff has correct toAgent
+
+packages\agents\src\orchestrator.test.ts:
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > runs full pipeline and returns AppBuilderResult [31.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > story reaches PR_OPEN state in workspace [47.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > AGENTS.md is created and contains the story [78.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > commitSha is captured from Developer git commit [32.00ms]
+(pass) SprintOrchestrator — happy path (RAW → PR_OPEN) > calls createPullRequest hook and captures prUrl [31.00ms]
+(pass) SprintOrchestrator — audio story > invokes Sound Engineer when archResp.soundEngineerRequired is true [31.00ms]
+[Splinty] Story story-fail BLOCKED: Agent BUSINESS_OWNER failed after 3 attempt(s): LLM failure for story-A
+(pass) SprintOrchestrator — per-story isolation > failed story does not block successful story [3094.00ms]
+[Splinty] Story story-2: 2 file(s) not retrieved by developer
+⚠ Retrieval failure rate: 50% (threshold: 15%)
+  - 1/2 retrieval attempts failed to locate needed files
+  - Most missed: src/auth/service.test.ts (1x), src/auth/service.ts (1x)
+
+  Recommendation: Enable hybrid retrieval with semantic embeddings.
+  Run: splinty config set retrieval.mode hybrid
+(pass) SprintOrchestrator — per-story isolation > multiple stories in same batch all get results [78.00ms]
+(pass) Phase 2 orchestrator integration > runs stories in topological order and creates project workspace
+(pass) Phase 2 orchestrator integration > writes story manifest and promotes source files at PR_OPEN [31.00ms]
+(pass) Phase 2 orchestrator integration > injects ProjectContext into developer handoff in story pipeline [31.00ms]
+[Splinty] Story story-orch BLOCKED: Story story-orch QA BLOCKED: Given valid creds, When I submit, Then I receive JWT
+(pass) SprintOrchestrator — QA rework loop > handles QA BLOCKED verdict by returning failed result [32.00ms]
+(pass) SprintOrchestrator — QA rework loop > QA FAIL triggers developer rework, then PASS succeeds [47.00ms]
+(pass) SprintOrchestrator — configurable pipeline > skips a step when condition returns false [31.00ms]
+(pass) SprintOrchestrator — configurable pipeline > runs agents in custom pipeline order [47.00ms]
+[Splinty] Story story-qa-retries-override BLOCKED: Cannot transition from IN_REVIEW to PR_OPEN
+(pass) SprintOrchestrator — configurable pipeline > honors retries override on QA step [15.00ms]
+(pass) SprintOrchestrator — ledger init > creates AGENTS.md even if projectId directory does not exist [47.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > wires sandbox to DeveloperAgent and sandbox results flow through pipeline [31.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > pipeline succeeds even when sandbox is not provided (backwards compatible) [47.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > passes sandboxConfig to sandbox.init() when provided [32.00ms]
+(pass) SprintOrchestrator — sandbox pipeline > accepts enforcer config without breaking story-mode pipeline [31.00ms]
+[Splinty] Story story-orch BLOCKED: Agent TECHNICAL_WRITER failed after 3 attempt(s): Simulated crash after QA pass
+(pass) SprintOrchestrator — resume points > persists a resume point after major steps before a crash [3047.00ms]
+(pass) SprintOrchestrator — resume points > clears resume point on successful pipeline completion [78.00ms]
+(pass) SprintOrchestrator — resume points > resumes from saved point and skips completed early steps [31.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > happy path runs end-to-end planned sprint across two stories [63.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > routes by executionMode to planned-sprint or story pipeline
+(pass) SprintOrchestrator — planned-sprint mode > marks blocked task and continues remaining tasks [62.00ms]
+(pass) SprintOrchestrator — planned-sprint mode > resumes from checkpoint by skipping completed groups [31.00ms]
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop applies sprint-level revision within limits [16.00ms]
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop calls humanGate when sprint limit exceeded
+(pass) SprintOrchestrator — revision loop and checkpoint > handleRevisionLoop calls humanGate for global-level revision [16.00ms]
+(pass) SprintOrchestrator — revision loop and checkpoint > executeRevisionLoop returns unchanged state when humanGate denies approval
+(pass) SprintOrchestrator — revision loop and checkpoint > executeRevisionLoop proceeds when humanGate approves global escalation
+(pass) SprintOrchestrator — revision loop and checkpoint > checkpoint save and load roundtrip persists sprint checkpoint
+(pass) SprintOrchestrator — model config > applies defaultModel to all agents when set [46.00ms]
+(pass) SprintOrchestrator — model config > applies defaultModel with temperature override to all agents [32.00ms]
+(pass) SprintOrchestrator — model config > applies per-persona override via models config [31.00ms]
+(pass) SprintOrchestrator — model config > lightModel backward compat applies to QA when models[QA] not set [47.00ms]
+(pass) SprintOrchestrator — model config > rejects empty projectId via Zod validation
+(pass) SprintOrchestrator — model config > rejects invalid temperature via Zod validation
+(pass) SprintOrchestrator — writeBackStory hook > accepts writeBackStory callback in config and stores reference
+(pass) SprintOrchestrator — writeBackStory hook > config accepts writeBackStory with minimal types
+(pass) SprintOrchestrator — writeBackStory hook > invokes writeBackStory after createPullRequest in story pipeline [31.00ms]
+(pass) SprintOrchestrator — writeBackStory hook > invokes writeBackStory after createPullRequest in planned-sprint pipeline [31.00ms]
+[orchestrator] write-back failed: warn: Simulated write-back failure
+      at writeBackStory (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.test.ts:1774:15)
+      at runStory (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.ts:1465:27)
+      at async run (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.ts:485:33)
+      at async <anonymous> (C:\Users\jgron\Repos\splinty\packages\agents\src\orchestrator.test.ts:1778:32)
+
+(pass) SprintOrchestrator — writeBackStory hook > does not throw if writeBackStory callback fails [32.00ms]
+
+packages\agents\src\product-owner.test.ts:
+(pass) ProductOwnerAgent > transitions story from EPIC to USER_STORY
+(pass) ProductOwnerAgent > populates acceptanceCriteria with at least 1 Gherkin scenario [15.00ms]
+(pass) ProductOwnerAgent > populates domain and tags from Claude response
+(pass) ProductOwnerAgent > returns handoff to ORCHESTRATOR [16.00ms]
+(pass) ProductOwnerAgent > stateOfWorld includes priority and storyPoints
+(pass) ProductOwnerAgent > handles null handoff (no business context)
+(pass) ProductOwnerAgent > strips markdown code fences from Claude response
+(pass) ProductOwnerAgent > throws when Claude returns non-JSON [15.00ms]
+(pass) ProductOwnerAgent > throws when acceptanceCriteria is empty array
+(pass) ProductOwnerAgent > throws when priority is missing
+
+packages\agents\src\qa-engineer.test.ts:
+(pass) QAEngineerAgent — PASS verdict > transitions story to DONE on PASS [16.00ms]
+(pass) QAEngineerAgent — PASS verdict > handoff targets ORCHESTRATOR on PASS
+(pass) QAEngineerAgent — PASS verdict > stateOfWorld.verdict === PASS [16.00ms]
+(pass) QAEngineerAgent — PASS verdict > writes QA report to artifacts/qa-report.md on PASS [15.00ms]
+(pass) QAEngineerAgent — PASS verdict > writes additional test files to artifacts/src/__tests__/
+(pass) QAEngineerAgent — PASS verdict > stateOfWorld contains branchName on PASS
+(pass) QAEngineerAgent — FAIL verdict (rework) > transitions story back to IN_PROGRESS on FAIL [16.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > handoff targets DEVELOPER on FAIL (first rework) [16.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > increments reworkCount in stateOfWorld
+(pass) QAEngineerAgent — FAIL verdict (rework) > stateOfWorld contains failedAC on FAIL [15.00ms]
+(pass) QAEngineerAgent — FAIL verdict (rework) > escalates to BLOCKED after exceeding max rework cycles
+(pass) QAEngineerAgent — FAIL verdict (rework) > story stays in IN_REVIEW when max rework cycles exceeded [16.00ms]
+(pass) QAEngineerAgent — BLOCKED verdict > story stays IN_REVIEW on BLOCKED
+(pass) QAEngineerAgent — BLOCKED verdict > handoff targets ORCHESTRATOR on BLOCKED [15.00ms]
+(pass) QAEngineerAgent — error handling > throws on non-JSON response
+(pass) QAEngineerAgent — error handling > throws when verdict is invalid
+(pass) QAEngineerAgent — error handling > handles fenced JSON from Claude [16.00ms]
+(pass) QAEngineerAgent — error handling > works when no source files listed in handoff
+(pass) QAEngineerAgent — sandbox results > includes sandbox results in LLM prompt when present in handoff [16.00ms]
+(pass) QAEngineerAgent — sandbox results > shows FAILED status for failed sandbox steps
+(pass) QAEngineerAgent — sandbox results > does not include sandbox section when no sandbox results in handoff [15.00ms]
+
+packages\agents\src\security-scanner.test.ts:
+(pass) scanCodeForVulnerabilities > detects obvious secret pattern in temporary file [16.00ms]
+(pass) scanCodeForVulnerabilities > does not flag env var reference as hardcoded secret
+
+packages\agents\src\sound-engineer.test.ts:
+(pass) SoundEngineerAgent — skip (non-audio) > returns SKIPPED handoff when soundEngineerRequired === false
+(pass) SoundEngineerAgent — skip (non-audio) > returns SKIPPED when handoff is null
+(pass) SoundEngineerAgent — skip (non-audio) > SKIPPED handoff targets DEVELOPER [16.00ms]
+(pass) SoundEngineerAgent — Python audio path > writes audio_service.py to workspace artifacts
+(pass) SoundEngineerAgent — Python audio path > writes requirements.txt with librosa
+(pass) SoundEngineerAgent — Python audio path > writes audio-design.md
+(pass) SoundEngineerAgent — Python audio path > handoff stateOfWorld.requiresPython === true
+(pass) SoundEngineerAgent — Python audio path > handoff targets DEVELOPER [16.00ms]
+(pass) SoundEngineerAgent — TypeScript audio path > writes TS audio module when Python not required
+(pass) SoundEngineerAgent — TypeScript audio path > handoff stateOfWorld.requiresPython === false for TS path [15.00ms]
+(pass) SoundEngineerAgent — error handling > throws on non-JSON response
+(pass) SoundEngineerAgent — error handling > throws when audioDesign is missing
+
+packages\agents\src\technical-writer.test.ts:
+(pass) TechnicalWriterAgent > writes README.md to artifacts/ [16.00ms]
+(pass) TechnicalWriterAgent > handoff targets ORCHESTRATOR
+(pass) TechnicalWriterAgent > stateOfWorld contains readmePath [16.00ms]
+(pass) TechnicalWriterAgent > carries forward branchName and commitSha
+(pass) TechnicalWriterAgent > writes additional docs when provided [15.00ms]
+(pass) TechnicalWriterAgent > throws on non-JSON response
+(pass) TechnicalWriterAgent > throws when readme is empty/missing
+(pass) TechnicalWriterAgent > handles fenced JSON from LLM [16.00ms]
+(pass) TechnicalWriterAgent > works without workspace (no crash)
+
+packages\cli\src\index.test.ts:
+[31mError: --name is required
+  Usage: splinty init --name <project-name>[0m
+(pass) cmdInit > returns exit code 2 when --name is missing
+[32m✓ Workspace initialized[0m
+  Project : test-project
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-8zAgV5\test-project\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) cmdInit > creates workspace directory and AGENTS.md
+[32m✓ Workspace initialized[0m
+  Project : my-project
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-ic6WAE\my-project\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) cmdInit > AGENTS.md contains the sprint ledger header
+(pass) cmdInit > prints ✓ Workspace initialized to stdout
+[32m✓ Workspace initialized[0m
+  Project : idempotent-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-iCyJUI\idempotent-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : idempotent-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-iCyJUI\idempotent-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) cmdInit > is idempotent — calling init twice returns 0 both times [16.00ms]
+(pass) cmdInit > prints next-steps env guidance
+[31mError: Ledger not found for project: nonexistent[0m
+  Run: splinty init --name nonexistent
+(pass) cmdStatus > returns exit code 2 when ledger does not exist
+[32m✓ Workspace initialized[0m
+  Project : empty-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-m3Ge62\empty-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+(pass) cmdStatus > returns 0 when project has no stories
+[32m✓ Workspace initialized[0m
+  Project : status-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-Szn3Mp\status-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) cmdStatus > prints table with story rows when ledger has stories
+[32m✓ Workspace initialized[0m
+  Project : default
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-pfNOR4\default\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+(pass) cmdStatus > defaults to project "default" when --project not provided
+[32m✓ Workspace initialized[0m
+  Project : env-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-W8w3sV\custom\env-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+(pass) cmdStatus > uses SPLINTY_WORKSPACE_DIR env var for workspace root
+
+Splinty — AI-powered SCRUM sprint pipeline
+
+USAGE
+  splinty <command> [options]
+
+COMMANDS
+  auth    Authenticate with GitHub Copilot (device flow)
+  login   Authenticate against Splinty API and store credentials
+  projects  Project operations via Splinty API
+  export  Export sprint telemetry artifacts
+  init    Create a new project workspace
+  run     Load stories and run the full pipeline
+  status  Print the current sprint board
+  --help  Show this help
+
+AUTH
+  splinty auth [--force] [--logout]
+
+  Options:
+    --force     Re-run device flow even if already authenticated
+    --logout    Remove the cached GitHub Copilot token
+
+  Token is stored at: ~/.splinty/copilot-token.json
+  Requires a paid GitHub Copilot subscription (Pro, Pro+, Business, or Enterprise).
+
+INIT
+  splinty init --name <project-name>
+
+  Options:
+    --name <project-name>   Unique project identifier
+
+RUN
+  splinty run --source <file|jira|github> --input <path|board-id|repo>
+
+  Options:
+    --source file     Load stories from a .md/.json/.yaml file
+    --source jira     Load stories from a Jira board
+    --source github   Load stories from GitHub Issues
+    --input <value>   File path, Jira board ID, or GitHub owner/repo
+    --project <id>    Project ID to use (default: "default")
+    --api             Route run through Splinty API client mode
+    --spec <path>     Path to project spec file (AGENTS.md) with tech stack constraints.
+                      Auto-discovered at docs/AGENTS.md if not specified.
+
+  Required env vars (set before running):
+    ANTHROPIC_API_KEY        Claude API key
+    JIRA_BASE_URL            Jira instance URL  (--source jira)
+    JIRA_EMAIL               Jira account email (--source jira)
+    JIRA_API_TOKEN           Jira API token     (--source jira)
+    GITHUB_TOKEN             GitHub token       (--source github)
+
+API LOGIN
+  splinty login --email <email> --password <password> [--org <org-id>]
+
+PROJECTS
+  splinty projects --action list
+
+STATUS
+  splinty status [--project <id>]
+
+  Options:
+    --project <id>    Project ID (default: "default")
+
+EXPORT
+  splinty export --format=json --sprint=<id> [--project <id>]
+
+  Options:
+    --format json     Output format (only json currently supported)
+    --sprint <id>     Sprint ID to export (required)
+    --project <id>    Project ID (default: "default")
+
+EXAMPLES
+  splinty init --name my-app
+  splinty run --source file --input stories/sprint1.md --project my-app
+  splinty run --source file --input roadmap.json --project my-app --api
+  splinty run --source file --input stories/sprint1.md --project my-app --spec docs/AGENTS.md
+  splinty run --source github --input owner/my-repo --project my-app
+  splinty login --email user@example.com --password 'StrongPass123!'
+  splinty projects --action list
+  splinty status --project my-app
+  splinty export --format=json --sprint=sprint-1736362052203 --project my-app
+
+EXIT CODES
+  0  All stories succeeded
+  1  One or more stories BLOCKED
+  2  Fatal error (misconfiguration, missing args, unrecoverable failure)
+
+(pass) cmdHelp > returns exit code 0
+(pass) cmdHelp > prints usage with all command names
+(pass) cmdHelp > includes exit code documentation
+(pass) cmdHelp > includes env var documentation
+[31mError: --source and --input are required[0m
+  Usage: splinty run --source <file|jira|github> --input <path|board-id|repo>
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when --source is missing
+[31mError: --source and --input are required[0m
+  Usage: splinty run --source <file|jira|github> --input <path|board-id|repo>
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when --input is missing
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError: unknown source "linear". Must be file, jira, or github[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 2 for unknown source
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError: JIRA_BASE_URL, JIRA_EMAIL, and JIRA_API_TOKEN env vars are required for Jira source[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when Jira env vars are missing
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError: GITHUB_TOKEN env var is required for GitHub source[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when GITHUB_TOKEN is missing
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError: --input for GitHub source must be in <owner/repo> format[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when GitHub input has no slash
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError loading stories: ParseError: failed to parse 'C:\nonexistent\stories.md': ENOENT: no such file or directory, open 'C:\nonexistent\stories.md'[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 2 when file does not exist
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[31mError loading stories: ParseError: failed to parse 'C:\Users\jgron\AppData\Local\Temp\splinty-cli-H1jO8D\empty.md': No story sections found. Use "## Story: <title>" headings.[0m
+(pass) cmdRun — error paths (no LLM calls) > returns 0 and warns when file has no stories [15.00ms]
+(pass) cmdRun — file source with mock orchestrator > loads stories from markdown and returns 0 on success (mocked pipeline)
+[32m✓ Workspace initialized[0m
+  Project : color-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-rdyLWU\color-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) status color coding > DONE stories appear with ANSI green in status output
+[32m✓ Workspace initialized[0m
+  Project : yellow-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-qAOICs\yellow-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+(pass) status color coding > IN_PROGRESS stories appear with ANSI yellow in status output
+(pass) cmdAuth > returns 0 and prints logout message when --logout flag is set
+(pass) cmdAuth > returns 2 and prints error when device flow fails (network error)
+(pass) cmdAuth > cmdHelp output includes AUTH section
+
+packages\core\src\architecture-enforcer.test.ts:
+(pass) architecture-enforcer schemas > valid EnforcementReport parses
+(pass) architecture-enforcer schemas > valid ArchitectureViolation parses
+(pass) architecture-enforcer schemas > valid ComplianceMetrics parses
+(pass) architecture-enforcer schemas > valid ModuleLock parses
+(pass) architecture-enforcer schemas > invalid schema data is rejected
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > import from exposed interface does not violate
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > import from internal path of another module violates
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > self import within same module does not violate
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > no cross module imports passes dependency rule
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > multiple internal cross module imports produce multiple violations
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > dynamic import and require are checked [16.00ms]
+(pass) ArchitectureEnforcer rule 2 - required exports > all exposed interfaces exported produces no required export violations
+(pass) ArchitectureEnforcer rule 2 - required exports > missing export is warning violation
+(pass) ArchitectureEnforcer rule 2 - required exports > modules absent from fileContents are skipped
+(pass) ArchitectureEnforcer rule 2 - required exports > export forms function const class type interface are detected
+(pass) ArchitectureEnforcer rule 2 - required exports > re-export with alias satisfies interface name
+(pass) ArchitectureEnforcer rule 3 - file ownership > all files inside ownedFiles passes
+(pass) ArchitectureEnforcer rule 3 - file ownership > file outside ownedFiles creates error
+(pass) ArchitectureEnforcer rule 3 - file ownership > empty fileContents passes ownership
+(pass) ArchitectureEnforcer rule 3 - file ownership > multiple unauthorized files create multiple violations
+(pass) ArchitectureEnforcer rule 4 - technology compliance > matching tech stack with no competitors passes technology check
+(pass) ArchitectureEnforcer rule 4 - technology compliance > competitor framework in dependencies triggers warning
+(pass) ArchitectureEnforcer rule 4 - technology compliance > no packageJson skips technology checks entirely
+(pass) ArchitectureEnforcer rule 4 - technology compliance > multiple framework and test framework competitors are reported
+(pass) ArchitectureEnforcer rule 4 - technology compliance > technology constraint forbidden package severity is honored
+(pass) ArchitectureEnforcer report assembly and integration > full validate with clean code returns pass
+(pass) ArchitectureEnforcer report assembly and integration > full validate with mixed violations returns fail and correct counts
+(pass) ArchitectureEnforcer report assembly and integration > warn status when only warnings exist
+(pass) ArchitectureEnforcer report assembly and integration > violations are sorted deterministically
+(pass) ArchitectureEnforcer report assembly and integration > telemetry hook receives enforcement completed event
+(pass) ArchitectureEnforcer report assembly and integration > telemetry violationsByRule groups counts by deterministic buckets
+
+packages\core\src\architecture-plan.test.ts:
+(pass) ArchitecturePlanSchema > valid global-level plan parses correctly
+(pass) ArchitecturePlanSchema > valid sprint-level plan parses correctly
+(pass) ArchitecturePlanSchema > invalid plan missing required fields fails [16.00ms]
+(pass) ArchitecturePlanSchema > scopeKey format validation works for sprint plans
+(pass) enum schemas > PlanQualityScore status values are correct enum
+(pass) enum schemas > ArchitectureConstraint type values are correct enum
+(pass) supporting schemas > TechStackDecision supports optional database field
+(pass) supporting schemas > HandoffDocument remains backward compatible without new fields [15.00ms]
+(pass) supporting schemas > HandoffDocument parses with new optional typed fields
+(pass) supporting schemas > ArchitecturePlanRef, SprintTaskPlanRef, and ImplementationTaskRef parse correctly
+(pass) ArchitecturePlanManager > save and load roundtrip works
+(pass) ArchitecturePlanManager > loadActive finds active plan by level and scopeKey
+(pass) ArchitecturePlanManager > supersede updates both plans correctly [16.00ms]
+(pass) ArchitecturePlanManager > load returns null for non-existent plan
+
+packages\core\src\diff.test.ts:
+(pass) DiffManager.generateDiff > returns empty patch for identical files
+(pass) DiffManager.generateDiff > handles a single line replacement
+(pass) DiffManager.generateDiff > handles multi-line additions
+(pass) DiffManager.generateDiff > handles multi-line deletions
+(pass) DiffManager.generateDiff > handles mixed changes with multiple hunks
+(pass) DiffManager.generateDiff > handles file with no trailing newline
+(pass) DiffManager.generateDiff > supports custom context lines
+(pass) DiffManager.applyPatch > applies a simple patch successfully
+(pass) DiffManager.applyPatch > applies multi-hunk patches
+(pass) DiffManager.applyPatch > applies with context matching under shifted position
+(pass) DiffManager.applyPatch > reports failed hunk when context does not match
+(pass) DiffManager.applyPatch > applies patch to empty file
+(pass) DiffManager round-trip and edge cases > round-trips generated patch back to new content
+(pass) DiffManager round-trip and edge cases > handles empty files
+(pass) DiffManager round-trip and edge cases > handles single-line files
+(pass) DiffManager round-trip and edge cases > handles long files (100+ lines)
+(pass) DiffManager.applyPatches > applies multiple file patches with mixed success
+(pass) DiffManager.applyPatches > treats missing file content as empty string
+
+packages\core\src\gate.test.ts:
+(pass) GateConfigSchema > parses valid config
+(pass) GateConfigSchema > rejects invalid requireApproval
+(pass) GateConfigSchema > allows missing notifyVia
+(pass) GateConfigSchema > rejects unknown notifyVia
+(pass) GateConfigSchema > parses config with never approval policy
+
+packages\core\src\handoff.test.ts:
+(pass) HandoffManager.create() > creates a valid handoff document [16.00ms]
+(pass) HandoffManager.create() > includes provided artifacts
+(pass) HandoffManager.create() > sets a valid ISO timestamp
+(pass) HandoffManager.save() + loadLatest() > round-trips a handoff document
+(pass) HandoffManager.save() + loadLatest() > returns null when no handoff exists for agent
+(pass) HandoffManager.save() + loadLatest() > returns most recent when multiple handoffs exist [31.00ms]
+(pass) HandoffManager.loadAll() > returns all saved handoffs in order [31.00ms]
+(pass) HandoffManager.loadAll() > returns empty array when no handoffs exist
+(pass) HandoffManager.summarize() > produces a non-empty string
+(pass) HandoffManager.summarize() > includes key fields in summary
+(pass) HandoffManager.summarize() > stays within 2000 character limit
+
+packages\core\src\import-graph.test.ts:
+(pass) ImportGraphBuilder.build() > returns empty map for empty project [16.00ms]
+(pass) ImportGraphBuilder.build() > includes single file with empty dependency set
+(pass) ImportGraphBuilder.build() > builds edge for relative import between two files
+(pass) ImportGraphBuilder.build() > resolves relative imports with and without explicit extension
+(pass) ImportGraphBuilder.build() > excludes non-relative package imports from graph
+(pass) ImportGraphBuilder.getTransitiveDependencies() > returns direct dependency for single edge
+(pass) ImportGraphBuilder.getTransitiveDependencies() > returns full transitive chain [15.00ms]
+(pass) ImportGraphBuilder.getTransitiveDependencies() > handles cycles without infinite loop and excludes source file
+(pass) ImportGraphBuilder.getImpactedFiles() > returns empty set when changed file has no importers
+(pass) ImportGraphBuilder.getImpactedFiles() > returns direct importer for changed file
+(pass) ImportGraphBuilder.getImpactedFiles() > returns transitive importers in reverse dependency chain
+
+packages\core\src\integration-sandbox.test.ts:
+(pass) MockIntegrationSandbox > addService + getServiceUrl
+(pass) MockIntegrationSandbox > executeInService with queued result
+(pass) MockIntegrationSandbox > executeInService default success result
+(pass) MockIntegrationSandbox > cleanup no-op does not throw
+
+packages\core\src\ledger.test.ts:
+(pass) LedgerManager.init() > creates AGENTS.md file
+(pass) LedgerManager.init() > file contains expected header content
+(pass) LedgerManager.upsertStory() > adds a new story to the ledger
+(pass) LedgerManager.upsertStory() > upserts multiple stories without duplication [16.00ms]
+(pass) LedgerManager.upsertStory() > loads all 3 stories after 3 upserts
+(pass) LedgerManager.updateState() > updates state of an existing story
+(pass) LedgerManager.load() > returns empty array on empty ledger
+(pass) LedgerManager.load() > simulates restart: new LedgerManager instance reads same data
+(pass) LedgerManager.getSnapshot() > throws if ledger not initialized
+
+packages\core\src\plan-revision.test.ts:
+(pass) plan-revision schemas > PlanRevisionReasonSchema accepts all expected enum values
+(pass) plan-revision schemas > PlanRevisionReasonSchema rejects invalid enum value
+(pass) plan-revision schemas > PlanRevisionLevelSchema accepts global and sprint
+(pass) plan-revision schemas > PlanRevisionLevelSchema rejects invalid value
+(pass) plan-revision schemas > PlanRevisionTriggerSchema parses minimal required data
+(pass) plan-revision schemas > PlanRevisionTriggerSchema rejects empty description
+(pass) plan-revision schemas > RevisionClassificationPolicySchema parses valid policy
+(pass) plan-revision schemas > RevisionClassificationPolicySchema rejects invalid rule
+(pass) plan-revision schemas > DriftWeightsSchema provides defaults and validates sum
+(pass) plan-revision schemas > DriftWeightsSchema rejects invalid sum
+(pass) plan-revision schemas > DriftWeightsSchema allows tolerance near 1.0
+(pass) plan-revision schemas > DriftMeasurementSchema applies default threshold
+(pass) plan-revision schemas > EvidenceSummarySchema parses valid shape
+(pass) plan-revision schemas > EvidenceSummarySchema rejects invalid resource limit
+(pass) computeDriftScore > zero violations returns zero score and not exceeded
+(pass) computeDriftScore > maximum violations saturate score at 100
+(pass) computeDriftScore > mixed violations computes deterministic rounded score
+(pass) computeDriftScore > custom weights are honored
+(pass) computeDriftScore > custom threshold updates exceeded decision
+(pass) computeDriftScore > zero totals avoid division by zero and can still saturate to max
+(pass) classifyRevisionLevel > global evidence classifies as global
+(pass) classifyRevisionLevel > sprint-only evidence classifies as sprint
+(pass) classifyRevisionLevel > mixed evidence defaults to safer global
+(pass) classifyRevisionLevel > human-override always classifies as global
+(pass) classifyRevisionLevel > empty evidence falls back to trigger level then sprint
+(pass) classifyRevisionLevel > custom policy changes classification behavior
+(pass) detectRepeatedEnforcementViolations > no violations does not trigger
+(pass) detectRepeatedEnforcementViolations > single report does not trigger by default
+(pass) detectRepeatedEnforcementViolations > same constraint repeated across reports triggers
+(pass) detectRepeatedEnforcementViolations > different constraints across reports do not trigger [16.00ms]
+(pass) detectRepeatedEnforcementViolations > custom minRepeats is respected
+(pass) detectDriftTrigger > below threshold does not trigger
+(pass) detectDriftTrigger > single exceeded does not trigger without critical flag
+(pass) detectDriftTrigger > two consecutive exceeded triggers
+(pass) detectDriftTrigger > critical boundary violation triggers immediately on single exceedance
+(pass) detectDriftTrigger > non-consecutive exceeded does not trigger when requiring consecutive
+(pass) detectDriftTrigger > non-consecutive exceeded triggers when not requiring consecutive and enough hits
+(pass) detectSandboxConstraintTrigger > no failures does not trigger
+(pass) detectSandboxConstraintTrigger > single failure does not trigger by default
+(pass) detectSandboxConstraintTrigger > repeated same-task distinct failures trigger
+(pass) detectSandboxConstraintTrigger > different-task failures do not trigger for same task repeat rule
+(pass) detectSandboxConstraintTrigger > custom minFailures is respected
+(pass) buildEvidenceSummary > basic trigger with no reports still builds valid summary
+(pass) buildEvidenceSummary > extracts failingModules and violatedConstraintIds from reports
+(pass) buildEvidenceSummary > new-capability-required maps trigger evidence into missingCapabilities
+(pass) buildEvidenceSummary > defaults level to sprint when trigger level missing
+(pass) buildEvidenceSummary > uses explicit trigger level when provided
+
+packages\core\src\plan-validation.test.ts:
+(pass) checkAcyclicDependencies > acyclic graph passes
+(pass) checkAcyclicDependencies > direct cycle (A→B→A) detected with cycle path
+(pass) checkAcyclicDependencies > indirect cycle (A→B→C→A) detected
+(pass) checkAcyclicDependencies > unknown dependency reference is reported as error
+(pass) checkAcyclicDependencies > self-dependency detected as cycle
+(pass) checkAcyclicDependencies > empty modules array passes
+(pass) checkStoryCoverage > all stories mapped passes
+(pass) checkStoryCoverage > unmapped story reports error with storyId
+(pass) checkStoryCoverage > empty storyModuleMapping passes
+(pass) checkModuleCoverage > all modules have owning stories passes
+(pass) checkModuleCoverage > orphaned module reports error
+(pass) checkInterfaceOwnership > unique interfaces passes
+(pass) checkInterfaceOwnership > duplicate interface across modules reports both modules
+(pass) validatePlan > clean plan returns valid true with no errors
+(pass) validatePlan > plan with multiple issues collects all errors and valid false
+(pass) scorePlan > well-designed plan scores high and passes
+(pass) scorePlan > plan with cycle sets dependencySanity to 0
+(pass) scorePlan > high fan-out penalizes dependencySanity
+(pass) scorePlan > overlapping responsibilities penalize cohesion
+(pass) scorePlan > missing stack tokens penalize stackConsistency
+(pass) scorePlan > overall formula uses weighted rounded computation
+(pass) scorePlan > status thresholds are pass, review, fail
+(pass) generateDigest > basic digest includes correct task module
+(pass) generateDigest > includes direct dependencies in includedModules
+(pass) generateDigest > filters constraints to relevant and technology constraints
+(pass) generateDigest > filters exposedInterfaces to included modules only
+(pass) generateDigest > digest generation is deterministic
+(pass) generateDigest > digestId format is correct
+(pass) generateDigest > unknown module name throws Error
+(pass) generateDigest > truncation works when maxChars is very small
+(pass) generateDigest > truncation keeps task module in includedModules
+(pass) generateDigest > result validates against PlanDigestSchema
+
+packages\core\src\project-context.test.ts:
+(pass) ProjectContextBuilder.build() > returns null when no project memory exists
+(pass) ProjectContextBuilder.build() > returns ProjectContext when project memory exists
+(pass) ProjectContextBuilder.build() > reads only allowed file extensions [15.00ms]
+(pass) ProjectContextBuilder.build() > respects the 20-file cap [16.00ms]
+(pass) ProjectContextBuilder.buildEmpty() > returns valid empty ProjectContext with correct projectId
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > prioritises target files over other project files [15.00ms]
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > expands target files to include transitive import dependencies
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > includes remaining files up to cap after priority files [32.00ms]
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > falls back to flat scan when no targetFiles provided
+
+packages\core\src\project-memory.manager.test.ts:
+(pass) ProjectMemoryManager > initialize creates project-memory.json and returns fresh memory
+(pass) ProjectMemoryManager > save and load round-trip project memory [15.00ms]
+(pass) ProjectMemoryManager > addStoryManifest appends manifest
+(pass) ProjectMemoryManager > addFileEntry appends file index entry
+(pass) ProjectMemoryManager > addArtifactEntry appends artifact index entry
+(pass) ProjectMemoryManager > getArtifactsByType returns only matching type entries [16.00ms]
+(pass) ProjectMemoryManager > getArtifactsByType returns empty array when no entries match
+(pass) ProjectMemoryManager > getArtifactsByType returns empty array when memory does not exist
+(pass) ProjectMemoryManager > getArtifactsBySprintId returns only entries with matching sprintId [16.00ms]
+(pass) ProjectMemoryManager > getArtifactsBySprintId returns empty array when memory does not exist
+(pass) ProjectMemoryManager > getSupersessionChain returns single entry when no supersedes link
+(pass) ProjectMemoryManager > getSupersessionChain walks supersedes links from newest to oldest
+(pass) ProjectMemoryManager > getSupersessionChain halts on cycle to prevent infinite loop [15.00ms]
+(pass) ProjectMemoryManager > getSupersessionChain returns empty array when artifact id not found
+(pass) ProjectMemoryManager > getSupersessionChain returns empty array when memory does not exist
+(pass) ProjectMemoryManager > load returns null if project-memory.json does not exist
+(pass) StoryManifestWriter > write and read round-trip story manifest [16.00ms]
+(pass) StoryManifestWriter > read returns null when story-manifest.json does not exist
+
+packages\core\src\project-memory.test.ts:
+(pass) StoryManifestSchema > parses a valid manifest
+(pass) StoryManifestSchema > rejects missing required fields
+(pass) StoryManifestSchema > accepts commands.run as optional
+(pass) StoryManifestSchema > rejects missing architectureDecisions
+(pass) FileEntrySchema > parses a valid file entry
+(pass) Artifact schemas > accepts selected enum values for artifact type
+(pass) Artifact schemas > rejects unknown artifact type values
+(pass) Artifact schemas > parses artifact entry without optional fields
+(pass) Artifact schemas > accepts optional supersedes field
+(pass) StackInfoSchema > parses minimal fields and defaults additionalDeps
+(pass) ProjectMemorySchema > parses with empty stories, fileIndex, and artifactIndex arrays
+(pass) ProjectMemorySchema > parses nested StoryManifest entries
+(pass) ProjectContextSchema > parses with empty relevantFiles
+(pass) ProjectContextSchema > parses with FileContent entries
+
+packages\core\src\resume.test.ts:
+(pass) ResumePointSchema > parses a valid resume point
+(pass) ResumePointSchema > rejects invalid resume point [15.00ms]
+(pass) ResumeManager.save() > writes resume-point.json to workspace
+(pass) ResumeManager.load() > reads and parses saved resume point
+(pass) ResumeManager.load() > returns null when no resume point exists
+(pass) ResumeManager.clear() > removes resume-point.json from workspace
+(pass) ResumeManager.exists() > returns false when file does not exist [47.00ms]
+(pass) ResumeManager.exists() > returns true when file exists
+(pass) ResumeManager round-trip > save then load returns identical data
+
+packages\core\src\retrieval-tracking.test.ts:
+(pass) RetrievalTracker.record() > records a valid attempt
+(pass) RetrievalTracker.record() > throws on invalid attempt
+(pass) RetrievalTracker.getAttempts() > returns all attempts when no filter is provided
+(pass) RetrievalTracker.getAttempts() > filters attempts by storyId
+(pass) RetrievalTracker.computeMetrics() > returns retrievalRate 1.0 and empty missedFiles for zero attempts
+(pass) RetrievalTracker.computeMetrics() > computes correct retrievalRate and missedFiles for partial retrieval
+(pass) RetrievalTracker.computeMetrics() > computes full retrieval with rate 1.0 and no missed files
+(pass) RetrievalTracker.computeMissedFiles() > returns requested files that were never retrieved across story attempts
+(pass) RetrievalTracker.clear() > empties attempts
+(pass) RetrievalTracker.detectContextGap() > returns null when there are no attempts for the project
+(pass) RetrievalTracker.detectContextGap() > returns null when failure rate is below threshold
+(pass) RetrievalTracker.detectContextGap() > returns escalation recommendation when failure rate exceeds threshold
+(pass) RetrievalTracker.detectContextGap() > respects a custom threshold
+(pass) RetrievalTracker.detectContextGap() > sorts missedFileFrequency by descending count
+(pass) RetrievalTracker.detectContextGap() > ignores attempts from other projects when computing escalation
+
+packages\core\src\sandbox.test.ts:
+(pass) SandboxConfigSchema > validates a valid config
+(pass) SandboxConfigSchema > applies default for maxDiskMb
+(pass) SandboxConfigSchema > rejects empty image
+(pass) SandboxConfigSchema > rejects negative timeoutMs
+(pass) SandboxConfigSchema > rejects zero memoryLimitMb
+(pass) SandboxResultSchema > validates a minimal result
+(pass) SandboxResultSchema > validates a result with resource usage
+(pass) SandboxResultSchema > validates a result with resource limit violation
+(pass) ResourceUsageSchema > validates resource usage
+(pass) ResourceLimitViolationSchema > validates all limit types
+(pass) ResourceLimitViolationSchema > rejects invalid limit type
+(pass) ExecOptsSchema > validates with all fields
+(pass) ExecOptsSchema > validates empty object
+(pass) SandboxImageLockfileSchema > validates a lockfile with entries
+(pass) SandboxImageLockfileSchema > validates an empty lockfile
+(pass) SandboxImageLockfileSchema > rejects invalid runtime
+(pass) MockSandbox > tracks init call and sets initialized flag
+(pass) MockSandbox > returns default success result for execute
+(pass) MockSandbox > returns queued execute results in order
+(pass) MockSandbox > falls back to default result after queue is exhausted
+(pass) MockSandbox > stores and retrieves written files
+(pass) MockSandbox > readFile throws for missing files
+(pass) MockSandbox > readFile returns preconfigured results
+(pass) MockSandbox > tracks cleanup and sets cleanedUp flag
+(pass) MockSandbox > throws configured init error
+(pass) MockSandbox > throws configured execute error
+(pass) MockSandbox > getExecuteCalls filters only execute calls
+(pass) MockSandbox > getWrittenFiles returns all written files
+(pass) MockSandbox > satisfies SandboxEnvironment interface
+(pass) MockSandbox > records call timestamps
+(pass) makeSuccessResult > creates a success result with defaults
+(pass) makeSuccessResult > creates a success result with custom stdout
+(pass) makeFailResult > creates a fail result with defaults
+(pass) makeFailResult > creates a fail result with custom exit code
+
+packages\core\src\service-guard.test.ts:
+(pass) extractServiceNames > returns unique top-level directory segments
+(pass) extractServiceNames > returns empty array for empty modules
+(pass) extractServiceNames > normalizes backslashes to forward slashes
+(pass) extractServiceNames > treats single-segment directory as service name
+(pass) ServiceCountGuard > returns true when service count is within limit
+(pass) ServiceCountGuard > returns false when limit exceeded and gate rejects
+(pass) ServiceCountGuard > returns true when limit exceeded and gate approves
+(pass) ServiceCountGuard > returns false without calling gate when requireHumanApproval is false
+(pass) ServiceCountGuard > passes project id and service list to gate
+(pass) ServiceGuardrailsSchema defaults > defaults maxServicesPerProject to 4
+(pass) ServiceGuardrailsSchema defaults > defaults requireHumanApproval to true
+(pass) WorkspaceManager service workspace > createServiceWorkspace creates expected directory structure
+(pass) WorkspaceManager service workspace > createServiceWorkspace returns WorkspaceState with storyId prefixed service: [16.00ms]
+(pass) WorkspaceManager service workspace > listServiceNames returns all created service names
+(pass) WorkspaceManager service workspace > listServiceNames returns empty array when no services exist
+(pass) WorkspaceManager service workspace > getServiceWorkspacePath returns correct path
+(pass) WorkspaceManager service workspace > writeFile works inside service workspace
+
+packages\core\src\sprint-state.test.ts:
+(pass) SprintCheckpointSchema > parses valid checkpoint
+(pass) SprintCheckpointSchema > rejects invalid checkpoint fields
+(pass) PlannedSprintStateSchema > parses valid planned sprint state
+(pass) PlannedSprintStateSchema > applies defaults for revision limits and story counts
+(pass) DefaultHumanGate > throws when approval is requested
+(pass) SprintCheckpointManager > save then load returns persisted checkpoint
+(pass) SprintCheckpointManager > returns null when checkpoint file is missing
+(pass) SprintCheckpointManager > returns null for invalid checkpoint JSON
+(pass) SprintCheckpointManager > clear removes checkpoint file and exists reflects state [16.00ms]
+
+packages\core\src\storage-adapter.test.ts:
+(pass) storage-adapter schemas > parses mkdir options
+(pass) storage-adapter schemas > parses rm options
+(pass) storage-adapter schemas > parses stat payload
+(pass) StorageAdapter contract > accepts a complete adapter implementation
+
+packages\core\src\story-dependencies.test.ts:
+(pass) topologicalSortStories > returns empty array for empty input
+(pass) topologicalSortStories > returns single story with no dependencies
+(pass) topologicalSortStories > orders dependency before dependent story
+(pass) topologicalSortStories > orders chained dependencies correctly
+(pass) topologicalSortStories > throws when dependency cycle exists
+(pass) topologicalSortStories > ignores unknown dependencies
+(pass) detectFileConflicts > returns empty map when no file conflicts exist
+(pass) detectFileConflicts > returns file conflict when multiple stories claim same file
+(pass) detectFileConflicts > does not include uniquely claimed files in result
+
+packages\core\src\story-metrics.test.ts:
+(pass) StoryMetricsSchema > parses valid object
+(pass) SprintTelemetrySchema > parses with stories array
+(pass) AppBuilderResultSchema > allows optional metrics field
+
+packages\core\src\story-state-machine.test.ts:
+(pass) StoryStateMachine > canTransition() > returns true for RAW → EPIC
+(pass) StoryStateMachine > canTransition() > returns false for RAW → MERGED (illegal jump)
+(pass) StoryStateMachine > canTransition() > returns false for MERGED → any state (terminal)
+(pass) StoryStateMachine > canTransition() > allows IN_REVIEW → IN_PROGRESS (rework)
+(pass) StoryStateMachine > canTransition() > allows IN_REVIEW → DONE (approved)
+(pass) StoryStateMachine > getNextStates() > returns [EPIC] for RAW
+(pass) StoryStateMachine > getNextStates() > returns [DONE, IN_PROGRESS] for IN_REVIEW
+(pass) StoryStateMachine > getNextStates() > returns empty array for MERGED
+(pass) StoryStateMachine > getResponsibleAgent() > returns BUSINESS_OWNER for RAW
+(pass) StoryStateMachine > getResponsibleAgent() > returns DEVELOPER for IN_PROGRESS
+(pass) StoryStateMachine > getResponsibleAgent() > returns QA_ENGINEER for IN_REVIEW
+(pass) StoryStateMachine > getResponsibleAgent() > returns ORCHESTRATOR for MERGED
+(pass) StoryStateMachine > transition() > transitions RAW → EPIC successfully
+(pass) StoryStateMachine > transition() > transitions through all valid states in sequence
+(pass) StoryStateMachine > transition() > does not mutate original story
+(pass) StoryStateMachine > transition() > throws InvalidStateTransitionError for illegal transition
+(pass) StoryStateMachine > transition() > error message describes the illegal transition
+(pass) StoryStateMachine > transition() > throws on RAW → IN_PROGRESS (skips states)
+(pass) StoryStateMachine > transition() > throws on attempting to leave MERGED (terminal)
+(pass) StoryStateMachine > transition() > updates updatedAt on transition
+
+packages\core\src\task-decomposition.test.ts:
+(pass) task-decomposition schema parsing > parses valid ImplementationTaskSchema
+(pass) task-decomposition schema parsing > rejects invalid ImplementationTaskSchema with empty storyIds
+(pass) task-decomposition schema parsing > parses valid IntegrationTaskSchema
+(pass) task-decomposition schema parsing > rejects invalid IntegrationTaskSchema type
+(pass) task-decomposition schema parsing > parses valid TaskGroupSchema
+(pass) task-decomposition schema parsing > rejects invalid TaskGroupSchema with non-positive groupId
+(pass) task-decomposition schema parsing > parses valid SprintTaskPlanSchema
+(pass) task-decomposition schema parsing > rejects invalid SprintTaskPlanSchema with schemaVersion 0
+(pass) task-decomposition schema parsing > applies default DecompositionGuardrails values [15.00ms]
+(pass) task-decomposition schema parsing > rejects invalid DecompositionGuardrails values
+208 |     const plan = makePlan();
+209 |     const stories = [makeStory('story-1', ['AuthService must validate tokens'])];
+210 | 
+211 |     const result = decomposer.decompose(plan, stories);
+212 |     expect(result.tasks).toHaveLength(1);
+213 |     expect(result.tasks[0]?.module).toBe('auth');
+                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "auth"
+Received: "auth-module"
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:213:37)
+(fail) TaskDecomposer.decompose > single story single module single interface yields one task
+242 |         { storyId: 'story-1', modules: ['auth', 'billing'], primaryModule: 'auth', estimatedFiles: [] },
+243 |       ],
+244 |     });
+245 | 
+246 |     const result = decomposer.decompose(plan, [makeStory('story-1')]);
+247 |     expect(result.tasks).toHaveLength(3);
+                               ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 3
+Received length: 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:247:26)
+(fail) TaskDecomposer.decompose > single story multi-module yields tasks per module interfaces
+275 |         { groupId: 2, storyIds: ['story-2'], rationale: 'second', dependsOn: [1] },
+276 |       ],
+277 |     });
+278 | 
+279 |     const result = decomposer.decompose(plan, [makeStory('story-1'), makeStory('story-2')]);
+280 |     expect(result.tasks).toHaveLength(2);
+                               ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 2
+Received length: 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:280:26)
+(fail) TaskDecomposer.decompose > multi-story shared modules keep correct storyIds per task
+313 |     });
+314 | 
+315 |     const result = decomposer.decompose(plan, [makeStory('story-1')]);
+316 |     const authTask = result.tasks.find((task) => task.module === 'auth');
+317 |     const sharedTask = result.tasks.find((task) => task.module === 'shared');
+318 |     expect(authTask).toBeDefined();
+                           ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:318:22)
+(fail) TaskDecomposer.decompose > module dependencies produce task dependencies and inputs
+354 |         { groupId: 2, storyIds: ['story-2'], rationale: 'second', dependsOn: [1] },
+355 |       ],
+356 |     });
+357 | 
+358 |     const result = decomposer.decompose(plan, [makeStory('story-1'), makeStory('story-2')]);
+359 |     expect(result.schedule.groups).toHaveLength(2);
+                                         ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 2
+Received length: 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:359:36)
+(fail) TaskDecomposer.decompose > task groups are derived from executionOrder
+388 |         { storyId: 'story-1', modules: ['shared', 'auth'], primaryModule: 'auth', estimatedFiles: [] },
+389 |       ],
+390 |     });
+391 | 
+392 |     const result = decomposer.decompose(plan, [makeStory('story-1')]);
+393 |     expect(result.integrationTasks).toHaveLength(1);
+                                          ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 1
+Received length: 0
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:393:37)
+(fail) TaskDecomposer.decompose > creates integration tasks for modules with dependencies
+427 |         { storyId: 'story-2', modules: ['billing'], primaryModule: 'billing', estimatedFiles: [] },
+428 |       ],
+429 |     });
+430 | 
+431 |     const result = decomposer.decompose(plan, [makeStory('story-1'), makeStory('story-2')]);
+432 |     expect(result.integrationPhase).toBeDefined();
+                                          ^
+error: expect(received).toBeDefined()
+
+Received: undefined
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:432:37)
+(fail) TaskDecomposer.decompose > creates integration phase depending on all task groups
+455 |         'Payments must capture receipts',
+456 |       ]),
+457 |     ];
+458 | 
+459 |     const result = decomposer.decompose(plan, stories);
+460 |     expect(result.tasks[0]?.acceptanceCriteria).toEqual([
+                                                      ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "AuthService validates JWT",
+-   "Auth module logs all auth events",
++   "Given valid creds, Then I get a JWT",
+  ]
+
+- Expected  - 2
++ Received  + 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:460:49)
+(fail) TaskDecomposer.decompose > filters acceptance criteria by module or interface name match
+(pass) TaskDecomposer guardrails > default guardrails are applied when none provided
+487 |         },
+488 |       ],
+489 |     });
+490 | 
+491 |     const result = decomposer.decompose(plan, [makeStory('story-1')]);
+492 |     expect(result.tasks).toHaveLength(6);
+                               ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 6
+Received length: 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:492:26)
+(fail) TaskDecomposer guardrails > custom guardrails override defaults
+511 |       plan,
+512 |       [makeStory('story-1', ['Read Model must be available', 'Read-Model should be queryable'])]
+513 |     );
+514 | 
+515 |     expect(result.tasks).toHaveLength(1);
+516 |     expect(result.tasks[0]?.acceptanceCriteria).toEqual([
+                                                      ^
+error: expect(received).toEqual(expected)
+
+  [
+-   "Read Model must be available",
+-   "Read-Model should be queryable",
++   "Given valid creds, Then I get a JWT",
+  ]
+
+- Expected  - 2
++ Received  + 1
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:516:49)
+(fail) TaskDecomposer guardrails > maxTasksPerStory can trigger merge pass and reduce task count
+533 |           owningStories: ['story-1'],
+534 |         },
+535 |       ],
+536 |     });
+537 | 
+538 |     expect(() => decomposer.decompose(plan, [makeStory('story-1')])).toThrow('maxTasksPerSprint');
+                                                                           ^
+error: expect(received).toThrow(expected)
+
+Expected substring: "maxTasksPerSprint"
+
+Received function did not throw
+Received value: {
+  sprintId: "sprint-1",
+  planId: "sprint-plan-ps",
+  parentGlobalPlanId: "global-plan-ps",
+  schemaVersion: 1,
+  tasks: [
+    {
+      taskId: "task-1",
+      storyIds: [ "story-ps-writeback-1" ],
+      module: "auth-module",
+      type: "create",
+      description: "implement story-ps-writeback-1",
+      targetFiles: [ "src/auth/story-ps-writeback-1.ts" ],
+      ownedFiles: [ "src/auth/story-ps-writeback-1.ts" ],
+      dependencies: [],
+      inputs: [],
+      expectedOutputs: [ "src/auth/story-ps-writeback-1.ts" ],
+      acceptanceCriteria: [ "Given valid creds, Then I get a JWT" ],
+    }
+  ],
+  schedule: {
+    groups: [
+      {
+        groupId: 1,
+        taskIds: [ "task-1" ],
+        dependsOn: [],
+      }
+    ],
+  },
+  integrationTasks: [],
+}
+
+      at <anonymous> (C:\Users\jgron\Repos\splinty\packages\core\src\task-decomposition.test.ts:538:70)
+(fail) TaskDecomposer guardrails > maxTasksPerSprint exceeded throws descriptive error
+(pass) decomposition validation helpers > validateNoFileCollisions detects overlapping files
+(pass) decomposition validation helpers > validateNoFileCollisions passes with no overlap
+(pass) decomposition validation helpers > validateTaskDependencies detects unknown task references
+(pass) decomposition validation helpers > validateTaskDependencies detects cycles
+(pass) decomposition validation helpers > validateDecomposition combines collision and dependency errors
+
+packages\core\src\telemetry-retention.test.ts:
+(pass) TelemetryRetentionManager.enforce > deletes oldest files beyond maxSprints
+(pass) TelemetryRetentionManager.enforce > keeps files within limit
+(pass) TelemetryRetentionManager.enforce > archives when archiveExpired=true [16.00ms]
+(pass) TelemetryRetentionManager.archive > produces valid gzip
+
+packages\core\src\types.test.ts:
+(pass) StorySchema > parses a valid story
+(pass) StorySchema > rejects story missing required title
+(pass) StorySchema > rejects story missing required id
+(pass) StorySchema > accepts optional storyPoints and sourceId
+(pass) StorySchema > accepts dependsOn when provided
+(pass) StorySchema > defaults dependsOn to empty array
+(pass) StorySchema > rejects invalid state enum
+(pass) StorySchema > accepts story with optional epicId
+(pass) EpicSchema > parses valid epic data
+(pass) EpicSchema > rejects invalid epic status
+(pass) Roadmap schemas > parses roadmap item with optional dates
+(pass) Roadmap schemas > parses valid roadmap
+(pass) HandoffDocumentSchema > parses a valid handoff document
+(pass) HandoffDocumentSchema > rejects missing storyId
+(pass) HandoffDocumentSchema > defaults artifacts to empty array
+(pass) HandoffDocumentSchema > accepts optional projectContext
+(pass) AgentConfigSchema > parses valid agent config with defaults
+(pass) AgentConfigSchema > rejects temperature out of range
+(pass) ModelConfigSchema > parses a valid model config with required field only
+(pass) ModelConfigSchema > parses a valid model config with all fields
+(pass) ModelConfigSchema > rejects model with empty string
+(pass) ModelConfigSchema > rejects temperature out of range (too high)
+(pass) ModelConfigSchema > rejects maxTokens as non-positive integer
+(pass) WorkspaceStateSchema > parses valid workspace state
+(pass) AppBuilderResultSchema > parses valid app builder result
+(pass) StoryState enum > has all 10 states
+(pass) AgentPersona enum > has all 12 personas
+
+packages\core\src\workspace.test.ts:
+(pass) WorkspaceManager.createWorkspace() > creates expected directory structure
+(pass) WorkspaceManager.createWorkspace() > returns correct projectId and storyId
+(pass) WorkspaceManager.createWorkspace() > basePath contains projectId and storyId
+(pass) WorkspaceManager.createWorkspace() > initializes files and agentsLog as empty
+(pass) WorkspaceManager.createWorkspace() > is idempotent (can be called multiple times) [15.00ms]
+(pass) WorkspaceManager.loadWorkspace() > rehydrates a workspace from disk
+(pass) WorkspaceManager.loadWorkspace() > throws WorkspaceNotFoundError for non-existent workspace
+(pass) WorkspaceManager.loadWorkspace() > restores agentsLog from disk
+(pass) WorkspaceManager.readFile() / writeFile() > writes and reads a file round-trip
+(pass) WorkspaceManager.readFile() / writeFile() > writes inside subdirectory
+(pass) WorkspaceManager.readFile() / writeFile() > throws if file does not exist [16.00ms]
+(pass) WorkspaceManager.listFiles() > lists written files
+(pass) WorkspaceManager.appendLog() > appends log entries to agent.log
+(pass) WorkspaceManager.appendLog() > adds entries to in-memory agentsLog
+(pass) WorkspaceManager path traversal protection > throws PathTraversalError for ../ escape [16.00ms]
+(pass) WorkspaceManager path traversal protection > does not write file outside workspace on traversal attempt
+(pass) ProjectWorkspace methods > createProjectWorkspace creates project/, project/src/, and project/artifacts/ directories
+(pass) ProjectWorkspace methods > writeProjectFile + readProjectFile round-trip for a simple file
+(pass) ProjectWorkspace methods > writeProjectFile creates nested directories
+(pass) ProjectWorkspace methods > listProjectFiles returns relative paths of written files
+(pass) ProjectWorkspace methods > listProjectFiles returns [] for empty project workspace
+(pass) ProjectWorkspace methods > readProjectFile throws on path traversal [15.00ms]
+(pass) ProjectWorkspace methods > writeProjectFile throws on path traversal
+(pass) ProjectWorkspace methods > promoteFiles copies files from story workspace to project workspace
+(pass) ProjectWorkspace methods > promoteFiles returns [] when source directory does not exist
+(pass) ProjectWorkspace methods > promoteFiles preserves directory structure [16.00ms]
+
+packages\integrations\src\file.test.ts:
+(pass) FileConnector — Markdown > parses a story with title and description
+(pass) FileConnector — Markdown > parses acceptance criteria from ## heading
+(pass) FileConnector — Markdown > parses multiple story sections
+(pass) FileConnector — Markdown > throws ParseError when no story sections found
+(pass) FileConnector — Markdown > assigns sourceId as 12-char hex string
+(pass) FileConnector — Markdown > parses Depends On metadata from markdown
+(pass) FileConnector — Markdown > defaults dependsOn to empty array when missing in markdown
+(pass) FileConnector — JSON > parses a valid JSON story array
+(pass) FileConnector — JSON > parses a single story object (not array)
+(pass) FileConnector — JSON > throws ParseError on malformed JSON [15.00ms]
+(pass) FileConnector — JSON > throws ParseError when required field missing
+(pass) FileConnector — YAML > parses a valid YAML story
+(pass) FileConnector — YAML > also parses .yml extension
+(pass) FileConnector — YAML > throws ParseError on malformed YAML
+(pass) FileConnector — setSource > stamps source as FILE and generates deterministic sourceId
+(pass) FileConnector — unsupported extension > throws ParseError for .docx
+(pass) FileConnector — file not found > throws ParseError when file does not exist
+
+packages\integrations\src\github.test.ts:
+(pass) GitHubConnector — fetchIssues > returns Story[] with source GITHUB
+(pass) GitHubConnector — fetchIssues > filters by labels when provided
+(pass) GitHubConnector — fetchIssues > filters out pull requests from results
+(pass) GitHubConnector — fetchIssues > returns empty array when no issues
+(pass) GitHubConnector — parseGitHubIssue > maps issue fields to Story correctly
+(pass) GitHubConnector — parseGitHubIssue > handles null body gracefully
+(pass) GitHubConnector — parseGitHubIssue > handles string labels [16.00ms]
+(pass) GitHubConnector — addComment > calls createComment with correct parameters
+(pass) GitHubConnector — addLabel > calls addLabels with correct parameters
+(pass) GitHubConnector — createBranch > creates branch from main by default
+(pass) GitHubConnector — createBranch > creates branch from custom base
+(pass) GitHubConnector — createPullRequest > returns PR URL
+(pass) GitHubConnector — createPullRequest > PR body contains Closes #issueNumber
+(pass) GitHubConnector — createPullRequest > PR body preserves the original body text
+
+packages\integrations\src\jira.test.ts:
+(pass) JiraConnector — fetchStories > returns Story[] with source JIRA
+(pass) JiraConnector — fetchStories > returns empty array when no issues
+(pass) JiraConnector — fetchStories > includes sprintId in JQL when provided
+(pass) JiraConnector — addComment > POSTs to correct endpoint with correct body
+(pass) JiraConnector — updateStatus > POSTs transition id to correct endpoint
+(pass) JiraConnector — getTransitions > returns transition list
+(pass) JiraConnector — error handling > throws AuthError on 401
+(pass) JiraConnector — error handling > throws NotFoundError on 404
+(pass) JiraConnector — error handling > throws generic error on 500
+(pass) JiraConnector — parseJiraIssue > extracts description from ADF content
+(pass) JiraConnector — parseJiraIssue > handles null description gracefully
+(pass) JiraConnector — parseJiraIssue > uses Basic auth header with base64 email:token
+(pass) JiraConnector — addAdfComment > POSTs ADF document to comment endpoint
+(pass) JiraConnector — createIssue > creates issue and returns key
+(pass) JiraConnector — createBugIssue > creates bug issue with issuetype Bug
+(pass) JiraConnector — getFieldMetadata > GETs createmeta for project
+(pass) JiraConnector — 429 retry > retries on 429 and succeeds on second attempt [1016.00ms]
+(pass) JiraConnector — 429 retry > respects Retry-After header (seconds) [1000.00ms]
+(pass) JiraConnector — 429 retry > throws RateLimitError after max retries [47.00ms]
+(pass) JiraConnector — 429 retry > uses exponential fallback when no Retry-After [3046.00ms]
+(pass) ADF factory functions > buildStoryDescription creates valid ADF
+(pass) ADF factory functions > buildBugDescription creates valid ADF with sections
+(pass) ADF factory functions > buildQaResultComment creates valid ADF with status
+
+packages\web\src\App.test.tsx:
+(pass) App > exports a renderable component
+
+packages\agents\src\providers\anthropic-client.test.ts:
+(pass) AnthropicClient.complete() > returns text from the first text block
+(pass) AnthropicClient.complete() > passes model, temperature, maxTokens, system and user message to SDK
+(pass) AnthropicClient.complete() > uses default maxTokens=4096 and temperature=0.7 when not provided
+(pass) AnthropicClient.complete() > throws when the response contains no text block
+(pass) AnthropicClient.complete() > propagates SDK errors
+
+packages\agents\src\providers\github-copilot-client.test.ts:
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: ABCD-1234
+
+Waiting for authorization...
+(pass) runDeviceFlow() > requests a device code, then polls and returns the access token
+GitHub Copilot authorization successful.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: XXXX-9999
+
+Waiting for authorization...
+(pass) runDeviceFlow() > retries on authorization_pending before succeeding
+GitHub Copilot authorization successful.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: SLOW-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+(pass) runDeviceFlow() > handles slow_down by increasing interval
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: EXPD-1234
+
+Waiting for authorization...
+(pass) runDeviceFlow() > throws on expired_token error
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: DENY-1234
+
+Waiting for authorization...
+(pass) runDeviceFlow() > throws on access_denied error
+(pass) runDeviceFlow() > throws when device code request fails
+(pass) GitHubCopilotClient — constructor & auth state > is not authenticated when no token file exists
+(pass) GitHubCopilotClient — constructor & auth state > is authenticated when token is passed directly
+(pass) GitHubCopilotClient — constructor & auth state > is authenticated when token file exists on disk
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: LGNI-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+(pass) GitHubCopilotClient.login() > runs device flow and persists token to disk [4000.00ms]
+Already authenticated with GitHub Copilot.
+(pass) GitHubCopilotClient.login() > skips device flow when token already exists (no force)
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: FORC-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+(pass) GitHubCopilotClient.login() > re-runs device flow when force=true even if token exists [4016.00ms]
+GitHub Copilot token removed.
+(pass) GitHubCopilotClient.logout() > removes the token file and marks client as not authenticated
+GitHub Copilot token removed.
+(pass) GitHubCopilotClient.logout() > does not throw when token file does not exist
+(pass) GitHubCopilotClient.complete() > throws with helpful message when not authenticated
+(pass) GitHubCopilotClient.complete() > sends POST with correct Copilot headers and body
+(pass) GitHubCopilotClient.complete() > returns the content string from choices[0].message.content
+(pass) GitHubCopilotClient.complete() > passes maxTokens and temperature to the request body
+(pass) GitHubCopilotClient.complete() > throws with re-auth hint on 401 and clears bad token
+(pass) GitHubCopilotClient.complete() > throws on non-ok HTTP response (500)
+(pass) GitHubCopilotClient.complete() > throws when choices[0].message.content is null
+(pass) GitHubCopilotClient.complete() > throws when choices array is empty
+(pass) GitHubCopilotClient.complete() > uses token from disk cache when no token passed in constructor
+
+packages\agents\src\__tests__\cross-story.integration.test.ts:
+[Splinty] Story story-2: 2 file(s) not retrieved by developer
+⚠ Retrieval failure rate: 50% (threshold: 15%)
+  - 1/2 retrieval attempts failed to locate needed files
+  - Most missed: src/auth/service.test.ts (1x), src/auth/service.ts (1x)
+
+  Recommendation: Enable hybrid retrieval with semantic embeddings.
+  Run: splinty config set retrieval.mode hybrid
+(pass) cross-story integration > Story 2 depends on Story 1: stories run in order, Story 1 files promoted, Story 2 receives projectContext [93.00ms]
+(pass) cross-story integration > file conflict detection emits console.warn when two stories claim the same file
+(pass) cross-story integration > retrieval tracker emits console.warn when developer does not retrieve requested files [47.00ms]
+
+packages\agents\src\__tests__\pipeline.integration.test.ts:
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > FileConnector parses sample-story.md into Story[]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > full pipeline: story reaches PR_OPEN state [31.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > workspace directory structure is created (handoffs/, artifacts/, agent.log) [32.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > AGENTS.md is created and contains the story entry [78.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > result contains commitSha from Developer git commit [31.00ms]
+(pass) Pipeline Integration — FileConnector → SprintOrchestrator > createPullRequest hook is called and prUrl is non-empty [31.00ms]
+
+packages\api\src\auth\jwt.test.ts:
+(pass) jwt helpers > signs and verifies token payload
+
+packages\api\src\auth\middleware.test.ts:
+(pass) authMiddleware > accepts bearer token from authorization header
+(pass) authMiddleware > accepts token from query string for SSE
+
+packages\api\src\auth\password.test.ts:
+(pass) password helpers > hashes and verifies password
+
+packages\api\src\auth\rbac.test.ts:
+(pass) rbac > admin has all permissions
+(pass) rbac > viewer is read-only
+(pass) rbac > service account cannot manage users
+(pass) rbac > requireRole enforces specific roles
+
+packages\api\src\middleware\cors.test.ts:
+(pass) cors middleware > allows listed origin
+(pass) cors middleware > rejects unlisted origin with 403
+(pass) cors middleware > handles preflight requests for allowed origin
+(pass) cors middleware > rejects preflight for unlisted origin
+
+packages\api\src\middleware\error-handler.test.ts:
+(pass) error handler > maps known api errors with status and code
+(pass) error handler > maps unknown errors to internal error
+(pass) error handler > maps unauthorized error correctly
+
+packages\api\src\middleware\rate-limiter.test.ts:
+(pass) rate limiter middleware > limits auth routes to configured threshold
+(pass) rate limiter middleware > limits general routes using general threshold
+(pass) rate limiter middleware > returns Retry-After header on limit exceeded
+(pass) rate limiter middleware > uses JWT subject identity when bearer token is valid
+
+packages\api\src\middleware\security-headers.test.ts:
+(pass) security headers middleware > adds all required security headers
+
+packages\api\src\routes\audit.test.ts:
+(pass) audit route > requires audit-read permission
+(pass) audit route > supports org list response shape
+(pass) audit route > filters by entity when entityType/entityId query provided
+
+packages\api\src\routes\auth.test.ts:
+(pass) auth routes > register returns token and user payload
+(pass) auth routes > login returns token for valid credentials [172.00ms]
+
+packages\api\src\routes\health.test.ts:
+(pass) health route > returns ok status payload
+
+packages\api\src\routes\metrics.test.ts:
+(pass) metrics route authorization > org metrics requires audit-read permission
+(pass) metrics route authorization > project comparison requires audit-read permission
+(pass) metrics route authorization > trends requires audit-read permission
+(pass) metrics route authorization > project velocity requires project-read permission
+
+packages\api\src\routes\reports.test.ts:
+(pass) reports route authorization > project report requires audit-read permission
+(pass) reports route authorization > org report requires org-manage permission
+(pass) reports route authorization > executive report health status turns green when completed meets planned
+(pass) reports route authorization > org report includes aggregate metrics object
+
+packages\api\src\routes\security.test.ts:
+(pass) security route authorization > requires org-manage role for triggering scan
+(pass) security route authorization > throws when report is missing
+
+packages\api\src\routes\webhooks.test.ts:
+(pass) webhooks route > requires webhook-manage permission
+(pass) webhooks route > creates webhook with valid payload
+(pass) webhooks route > throws when updating missing webhook
+(pass) webhooks route > throws when deleting missing webhook
+
+packages\cli\src\__tests__\cli.e2e.test.ts:
+(pass) CLI e2e — splinty init > creates workspace directory and AGENTS.md [406.00ms]
+(pass) CLI e2e — splinty init > stdout contains "Workspace initialized" [391.00ms]
+(pass) CLI e2e — splinty init > stdout contains env var guidance (ANTHROPIC_API_KEY) [422.00ms]
+(pass) CLI e2e — splinty init > returns exit code 2 when --name flag is missing [421.00ms]
+(pass) CLI e2e — splinty status > returns 0 on project with no stories (empty ledger) [829.00ms]
+(pass) CLI e2e — splinty status > renders table with story rows from AGENTS.md [812.00ms]
+(pass) CLI e2e — splinty status > returns exit code 2 when project does not exist [422.00ms]
+(pass) CLI e2e — splinty --help > prints usage text containing init, run, status [391.00ms]
+(pass) CLI e2e — splinty --help > prints EXIT CODES section [421.00ms]
+(pass) CLI e2e — splinty --help > prints ANTHROPIC_API_KEY in env vars section [391.00ms]
+(pass) CLI e2e — splinty run error paths > exits with code 2 when JIRA env vars are missing [438.00ms]
+(pass) CLI e2e — splinty run error paths > exits with code 2 when GITHUB_TOKEN is missing [390.00ms]
+(pass) CLI e2e — splinty run error paths > exits with code 2 when --source and --input are missing [406.00ms]
+(pass) CLI e2e — splinty run error paths > exits with code 2 for unknown source type [407.00ms]
+(pass) CLI e2e — splinty run error paths > exits with code 2 when GitHub input missing slash (invalid format) [437.00ms]
+
+packages\core\src\services\agent-capabilities.test.ts:
+(pass) agent capability profiles > covers all 12 agent personas
+(pass) agent capability profiles > defines DEVELOPER as execution profile with sandbox and git
+(pass) agent capability profiles > defines QA_ENGINEER as advisory with read-only tool access
+(pass) agent capability profiles > validates canonical profile shape with zod
+(pass) agent capability profiles > rejects invalid persona in profile schema
+
+packages\db\src\repositories\audit.repo.test.ts:
+(pass) AuditRepository API surface > exposes append/list methods only for mutation safety
+
+packages\db\src\repositories\story-metrics.repo.test.ts:
+(pass) StoryMetricsRepository API surface > exposes save/findBySprint/findByStory methods
+
+packages\db\src\repositories\story.repo.test.ts:
+(pass) StoryRepository > maps db row to Story-compatible shape
+
+packages\db\src\repositories\velocity.repo.test.ts:
+(pass) VelocityRepository > returns 0 average for empty project
+(pass) VelocityRepository > computes average from recent completed points
+
+packages\db\src\schema\artifact-versions.test.ts:
+(pass) artifact model schema > exports artifact model table names
+(pass) artifact model schema > artifact_versions has required columns
+(pass) artifact model schema > artifact_evaluations has required columns
+(pass) artifact model schema > artifact_lineage has required columns
+(pass) promotion schema > exports promotion table names
+(pass) promotion schema > gate_definitions has required columns
+(pass) promotion schema > stage_transitions has required columns
+(pass) canonical governance enums > exports artifact, relationship, and promotion enums
+
+packages\db\src\schema\promotion.test.ts:
+(pass) promotion schema structure > exports gate definitions and stage transitions tables
+(pass) promotion schema structure > gate_definitions includes governance gate contract fields
+(pass) promotion schema structure > stage_transitions includes approval and evidence linkage fields
+(pass) promotion schema structure > promotionStageEnum is exported
+
+packages\db\src\schema\schema.test.ts:
+(pass) db schema table exports > exports all required table names
+(pass) stories schema superset requirements > contains StorySchema columns plus platform columns
+(pass) audit log append-only design > has createdAt but no updatedAt
+
+packages\integrations\src\__tests__\integrations.test.ts:
+(pass) Integrations — Jira combined flow: fetch → add comment > fetches stories from a board then writes a comment back to the same issue
+(pass) Integrations — Jira combined flow: fetch → add comment > fetchStories + getTransitions for the same issue key
+(pass) Integrations — GitHub combined flow: fetch issues → create PR > fetches issues then creates a PR that closes the fetched issue
+(pass) Integrations — GitHub combined flow: fetch issues → create PR > fetches issues with label filter then adds a comment
+(pass) Integrations — Jira error scenarios > throws AuthError on 401 response
+(pass) Integrations — Jira error scenarios > throws NotFoundError on 404 response
+(pass) Integrations — Jira error scenarios > throws generic error on 500 response
+(pass) Integrations — Jira error scenarios > throws network error when fetch throws
+(pass) Integrations — GitHub error scenarios > returns empty story list when repo has no open issues
+(pass) Integrations — GitHub error scenarios > filters out pull requests automatically
+(pass) Integrations — GitHub error scenarios > propagates octokit errors on createPullRequest failure
+
+11 tests failed:
+(fail) TaskDecomposer.decompose > single story single module single interface yields one task
+(fail) TaskDecomposer.decompose > single story multi-module yields tasks per module interfaces
+(fail) TaskDecomposer.decompose > multi-story shared modules keep correct storyIds per task
+(fail) TaskDecomposer.decompose > module dependencies produce task dependencies and inputs
+(fail) TaskDecomposer.decompose > task groups are derived from executionOrder
+(fail) TaskDecomposer.decompose > creates integration tasks for modules with dependencies
+(fail) TaskDecomposer.decompose > creates integration phase depending on all task groups
+(fail) TaskDecomposer.decompose > filters acceptance criteria by module or interface name match
+(fail) TaskDecomposer guardrails > custom guardrails override defaults
+(fail) TaskDecomposer guardrails > maxTasksPerStory can trigger merge pass and reduce task count
+(fail) TaskDecomposer guardrails > maxTasksPerSprint exceeded throws descriptive error
+---------------------------------------------------------------|---------|---------|-------------------
+File                                                           | % Funcs | % Lines | Uncovered Line #s
+---------------------------------------------------------------|---------|---------|-------------------
+All files                                                      |   75.46 |   85.04 |
+ packages\agents\src\__tests__\cross-story.integration.test.ts |   96.55 |  100.00 | 
+ packages\agents\src\__tests__\pipeline.integration.test.ts    |   95.83 |  100.00 | 
+ packages\agents\src\architect.test.ts                         |   92.11 |  100.00 | 
+ packages\agents\src\architect.ts                              |   66.67 |  100.00 | 
+ packages\agents\src\architecture-planner.test.ts              |  100.00 |  100.00 | 
+ packages\agents\src\architecture-planner.ts                   |  100.00 |  100.00 | 
+ packages\agents\src\base-agent.test.ts                        |   96.55 |  100.00 | 
+ packages\agents\src\base-agent.ts                             |  100.00 |  100.00 | 
+ packages\agents\src\business-owner.test.ts                    |   94.74 |  100.00 | 
+ packages\agents\src\business-owner.ts                         |   66.67 |  100.00 | 
+ packages\agents\src\developer.test.ts                         |   97.67 |  100.00 | 
+ packages\agents\src\developer.ts                              |   96.15 |  100.00 | 
+ packages\agents\src\gate.test.ts                              |  100.00 |  100.00 | 
+ packages\agents\src\index.ts                                  |  100.00 |  100.00 | 
+ packages\agents\src\infrastructure-engineer.test.ts           |  100.00 |  100.00 | 
+ packages\agents\src\infrastructure-engineer.ts                |  100.00 |   88.54 | 77-79,84,90,95-97,100-102
+ packages\agents\src\integration-test-engineer.test.ts         |  100.00 |  100.00 | 
+ packages\agents\src\integration-test-engineer.ts              |  100.00 |  100.00 | 
+ packages\agents\src\migration-engineer.test.ts                |  100.00 |  100.00 | 
+ packages\agents\src\migration-engineer.ts                     |  100.00 |   86.81 | 84-86,96-98,101-103,106-108
+ packages\agents\src\orchestrator.test.ts                      |   96.59 |   98.87 | 622-623,1084-1091,1120-1121,1663-1666
+ packages\agents\src\orchestrator.ts                           |   88.46 |   98.04 | 89-100,235,239-252
+ packages\agents\src\product-owner.test.ts                     |   96.67 |  100.00 | 
+ packages\agents\src\product-owner.ts                          |   66.67 |  100.00 | 
+ packages\agents\src\providers\anthropic-client.test.ts        |  100.00 |  100.00 | 
+ packages\agents\src\providers\anthropic-client.ts             |  100.00 |  100.00 | 
+ packages\agents\src\providers\github-copilot-client.test.ts   |   97.37 |   99.43 | 66
+ packages\agents\src\providers\github-copilot-client.ts        |   88.24 |  100.00 | 
+ packages\agents\src\providers\index.ts                        |  100.00 |  100.00 | 
+ packages\agents\src\qa-engineer.test.ts                       |   96.72 |  100.00 | 
+ packages\agents\src\qa-engineer.ts                            |   75.00 |  100.00 | 
+ packages\agents\src\security-scanner.test.ts                  |   87.50 |  100.00 | 
+ packages\agents\src\security-scanner.ts                       |  100.00 |   90.65 | 107-109,125,139-144
+ packages\agents\src\sound-engineer.test.ts                    |   94.74 |  100.00 | 
+ packages\agents\src\sound-engineer.ts                         |   75.00 |   97.53 | 62
+ packages\agents\src\technical-writer.test.ts                  |   93.10 |  100.00 | 
+ packages\agents\src\technical-writer.ts                       |   66.67 |   98.97 | 
+ packages\api\src\auth\jwt.test.ts                             |  100.00 |  100.00 | 
+ packages\api\src\auth\jwt.ts                                  |  100.00 |   96.30 | 
+ packages\api\src\auth\middleware.test.ts                      |  100.00 |  100.00 | 
+ packages\api\src\auth\middleware.ts                           |  100.00 |   87.88 | 18,29,34
+ packages\api\src\auth\password.test.ts                        |  100.00 |  100.00 | 
+ packages\api\src\auth\password.ts                             |  100.00 |  100.00 | 
+ packages\api\src\auth\rbac.test.ts                            |  100.00 |  100.00 | 
+ packages\api\src\auth\rbac.ts                                 |  100.00 |  100.00 | 
+ packages\api\src\middleware\cors.test.ts                      |  100.00 |  100.00 | 
+ packages\api\src\middleware\cors.ts                           |   71.43 |   79.59 | 12,14-17,19-21,38
+ packages\api\src\middleware\error-handler.test.ts             |  100.00 |  100.00 | 
+ packages\api\src\middleware\error-handler.ts                  |   83.33 |   97.14 | 
+ packages\api\src\middleware\rate-limiter.test.ts              |  100.00 |  100.00 | 
+ packages\api\src\middleware\rate-limiter.ts                   |   81.82 |   78.90 | 30-36,48-50,52,57-60,66,68,107-111
+ packages\api\src\middleware\security-headers.test.ts          |  100.00 |  100.00 | 
+ packages\api\src\middleware\security-headers.ts               |  100.00 |  100.00 | 
+ packages\api\src\routes\audit.test.ts                         |   93.75 |   95.74 | 41-42
+ packages\api\src\routes\audit.ts                              |  100.00 |  100.00 | 
+ packages\api\src\routes\auth.test.ts                          |   91.67 |   95.51 | 80-83
+ packages\api\src\routes\auth.ts                               |   83.33 |   81.05 | 39,51,87,92,99-112
+ packages\api\src\routes\health.test.ts                        |  100.00 |  100.00 | 
+ packages\api\src\routes\health.ts                             |  100.00 |  100.00 | 
+ packages\api\src\routes\metrics.test.ts                       |   93.75 |   95.74 | 43-44
+ packages\api\src\routes\metrics.ts                            |   80.00 |   65.96 | 14-17,34-45
+ packages\api\src\routes\reports.test.ts                       |  100.00 |  100.00 | 
+ packages\api\src\routes\reports.ts                            |  100.00 |  100.00 | 
+ packages\api\src\routes\security.test.ts                      |  100.00 |  100.00 | 
+ packages\api\src\routes\security.ts                           |  100.00 |   81.25 | 25-26,28-29,38
+ packages\api\src\routes\webhooks.test.ts                      |   95.00 |   93.85 | 8-11
+ packages\api\src\routes\webhooks.ts                           |  100.00 |   94.64 | 61,72
+ packages\api\src\services\executive-report.ts                 |  100.00 |   95.74 | 8
+ packages\api\src\services\metrics-aggregator.ts               |   52.94 |   70.00 | 19,93-115
+ packages\api\src\services\security-scanner.service.ts         |   66.67 |   20.00 | 10-41
+ packages\api\src\utils\response.ts                            |  100.00 |  100.00 | 
+ packages\cli\src\__tests__\cli.e2e.test.ts                    |  100.00 |  100.00 | 
+ packages\cli\src\api-client.ts                                |    0.00 |    5.50 | 12-13,18-20,23-120
+ packages\cli\src\index.test.ts                                |   96.97 |  100.00 | 
+ packages\cli\src\index.ts                                     |   60.00 |   27.14 | 46-47,52-75,102,104-107,141-146,148,150-154,156-162,165-171,173,175-178,187-193,225-227,238-240,250-253,255,258-260,262-266,268-271,274-275,278-287,289-294,298-305,307,312-332,337-357,408-451,471,473-478,581-618,633-750,757-785,791-792
+ packages\core\src\architecture-enforcer.test.ts               |   96.36 |  100.00 | 
+ packages\core\src\architecture-enforcer.ts                    |   97.83 |  100.00 | 
+ packages\core\src\architecture-plan.test.ts                   |  100.00 |  100.00 | 
+ packages\core\src\architecture-plan.ts                        |   90.00 |  100.00 | 
+ packages\core\src\cli-human-gate.ts                           |    0.00 |   13.64 | 5-23
+ packages\core\src\diff.test.ts                                |  100.00 |  100.00 | 
+ packages\core\src\diff.ts                                     |   92.86 |   93.92 | 115-119,144-145,150-151,161-162,227-228,284-285,294-295
+ packages\core\src\fs-storage-adapter.ts                       |   84.62 |   44.44 | 63-107
+ packages\core\src\gate.test.ts                                |  100.00 |  100.00 | 
+ packages\core\src\handoff.test.ts                             |  100.00 |  100.00 | 
+ packages\core\src\handoff.ts                                  |  100.00 |  100.00 | 
+ packages\core\src\import-graph.test.ts                        |  100.00 |  100.00 | 
+ packages\core\src\import-graph.ts                             |  100.00 |  100.00 | 
+ packages\core\src\index.ts                                    |  100.00 |  100.00 | 
+ packages\core\src\integration-sandbox-docker.ts               |    0.00 |   10.00 | 12,16-27,32-97,101-127,132-133
+ packages\core\src\integration-sandbox-mock.ts                 |   83.33 |   85.71 | 23-26
+ packages\core\src\integration-sandbox.test.ts                 |  100.00 |  100.00 | 
+ packages\core\src\ledger.test.ts                              |  100.00 |  100.00 | 
+ packages\core\src\ledger.ts                                   |  100.00 |  100.00 | 
+ packages\core\src\llm-client.ts                               |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.test.ts                       |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.ts                            |   92.31 |   94.74 | 18-28,216,248
+ packages\core\src\plan-validation.test.ts                     |  100.00 |  100.00 | 
+ packages\core\src\plan-validation.ts                          |   93.65 |   96.48 | 59,66-68,70-72,84-85,154,265,336-337,510-511
+ packages\core\src\project-context.test.ts                     |  100.00 |  100.00 | 
+ packages\core\src\project-context.ts                          |  100.00 |  100.00 | 
+ packages\core\src\project-memory.manager.test.ts              |  100.00 |  100.00 | 
+ packages\core\src\project-memory.test.ts                      |  100.00 |  100.00 | 
+ packages\core\src\project-memory.ts                           |  100.00 |  100.00 | 
+ packages\core\src\resume.test.ts                              |  100.00 |  100.00 | 
+ packages\core\src\resume.ts                                   |  100.00 |  100.00 | 
+ packages\core\src\retrieval-tracking.test.ts                  |  100.00 |  100.00 | 
+ packages\core\src\retrieval-tracking.ts                       |   94.12 |  100.00 | 
+ packages\core\src\sandbox-mock.ts                             |  100.00 |  100.00 | 
+ packages\core\src\sandbox.test.ts                             |  100.00 |  100.00 | 
+ packages\core\src\sandbox.ts                                  |    0.00 |   38.10 | 120-121,127-132,138-142
+ packages\core\src\service-guard.test.ts                       |   96.88 |   98.99 | 133-134
+ packages\core\src\service-guard.ts                            |   83.33 |  100.00 | 
+ packages\core\src\services\agent-capabilities.test.ts         |  100.00 |  100.00 | 
+ packages\core\src\services\agent-capabilities.ts              |   75.00 |   99.45 | 
+ packages\core\src\sprint-state.test.ts                        |  100.00 |  100.00 | 
+ packages\core\src\sprint-state.ts                             |   85.71 |  100.00 | 
+ packages\core\src\storage-adapter.test.ts                     |   52.94 |   85.19 | 39,42,45,51,57,60,63
+ packages\core\src\storage-adapter.ts                          |  100.00 |  100.00 | 
+ packages\core\src\story-dependencies.test.ts                  |  100.00 |  100.00 | 
+ packages\core\src\story-dependencies.ts                       |   81.25 |   91.47 | 27,34-36,38-40,52-53,127-128
+ packages\core\src\story-metrics.test.ts                       |  100.00 |  100.00 | 
+ packages\core\src\story-state-machine.test.ts                 |  100.00 |  100.00 | 
+ packages\core\src\story-state-machine.ts                      |   83.33 |  100.00 | 
+ packages\core\src\task-decomposition.test.ts                  |   91.84 |   99.83 | 
+ packages\core\src\task-decomposition.ts                       |   57.58 |   43.00 | 102-107,112-118,122-125,129-134,138-144,148-154,158-181,185-252,263-422
+ packages\core\src\telemetry-retention.test.ts                 |  100.00 |  100.00 | 
+ packages\core\src\telemetry-retention.ts                      |  100.00 |  100.00 | 
+ packages\core\src\types.test.ts                               |  100.00 |  100.00 | 
+ packages\core\src\types.ts                                    |  100.00 |  100.00 | 
+ packages\core\src\workspace.test.ts                           |  100.00 |  100.00 | 
+ packages\core\src\workspace.ts                                |  100.00 |  100.00 | 
+ packages\db\src\db.ts                                         |    0.00 |   60.00 | 5-6
+ packages\db\src\index.ts                                      |  100.00 |  100.00 | 
+ packages\db\src\repositories\audit.repo.test.ts               |  100.00 |  100.00 | 
+ packages\db\src\repositories\audit.repo.ts                    |   75.00 |   76.47 | 6-9
+ packages\db\src\repositories\epic.repo.ts                     |    0.00 |    6.78 | 6-60
+ packages\db\src\repositories\index.ts                         |  100.00 |  100.00 | 
+ packages\db\src\repositories\organization.repo.ts             |   42.86 |   25.00 | 10-30
+ packages\db\src\repositories\project.repo.ts                  |   50.00 |   25.00 | 6-14,21-33,38-45
+ packages\db\src\repositories\sprint.repo.ts                   |    0.00 |    8.16 | 6-50
+ packages\db\src\repositories\story-metrics.repo.test.ts       |  100.00 |  100.00 | 
+ packages\db\src\repositories\story-metrics.repo.ts            |   50.00 |   45.00 | 6-9,17-23
+ packages\db\src\repositories\story.repo.test.ts               |  100.00 |  100.00 | 
+ packages\db\src\repositories\story.repo.ts                    |   33.33 |   28.89 | 31-94
+ packages\db\src\repositories\user.repo.ts                     |   50.00 |   30.77 | 16-21,28-48
+ packages\db\src\repositories\velocity.repo.test.ts            |   70.00 |   70.00 | 7-10,22-29
+ packages\db\src\repositories\velocity.repo.ts                 |   83.33 |   81.82 | 6-9
+ packages\db\src\repositories\webhook.repo.ts                  |   70.00 |   57.14 | 10-15,25-33
+ packages\db\src\schema\artifact-versions.test.ts              |  100.00 |  100.00 | 
+ packages\db\src\schema\artifact_evaluations.ts                |    0.00 |  100.00 | 
+ packages\db\src\schema\artifact_lineage.ts                    |  100.00 |  100.00 | 
+ packages\db\src\schema\artifact_versions.ts                   |    0.00 |  100.00 | 
+ packages\db\src\schema\audit_log.ts                           |    0.00 |  100.00 | 
+ packages\db\src\schema\epics.ts                               |    0.00 |  100.00 | 
+ packages\db\src\schema\index.ts                               |  100.00 |  100.00 | 
+ packages\db\src\schema\organizations.ts                       |    0.00 |   91.67 | 
+ packages\db\src\schema\projects.ts                            |    0.00 |  100.00 | 
+ packages\db\src\schema\promotion.test.ts                      |  100.00 |  100.00 | 
+ packages\db\src\schema\promotion.ts                           |    0.00 |  100.00 | 
+ packages\db\src\schema\schema.test.ts                         |  100.00 |  100.00 | 
+ packages\db\src\schema\sprint_telemetry.ts                    |    0.00 |  100.00 | 
+ packages\db\src\schema\sprints.ts                             |    0.00 |  100.00 | 
+ packages\db\src\schema\stories.ts                             |    0.00 |  100.00 | 
+ packages\db\src\schema\story_metrics.ts                       |    0.00 |  100.00 | 
+ packages\db\src\schema\users.ts                               |    0.00 |   94.74 | 
+ packages\db\src\schema\velocity_snapshots.ts                  |    0.00 |  100.00 | 
+ packages\db\src\schema\webhooks.ts                            |    0.00 |  100.00 | 
+ packages\integrations\src\__tests__\integrations.test.ts      |   86.27 |   99.17 | 67-68
+ packages\integrations\src\file.test.ts                        |  100.00 |  100.00 | 
+ packages\integrations\src\file.ts                             |   92.86 |  100.00 | 
+ packages\integrations\src\github.test.ts                      |   90.00 |  100.00 | 
+ packages\integrations\src\github.ts                           |  100.00 |  100.00 | 
+ packages\integrations\src\index.ts                            |  100.00 |  100.00 | 
+ packages\integrations\src\jira.test.ts                        |   94.25 |  100.00 | 
+ packages\integrations\src\jira.ts                             |  100.00 |  100.00 | 
+ packages\web\src\App.test.tsx                                 |  100.00 |  100.00 | 
+ packages\web\src\App.tsx                                      |    0.00 |   38.46 | 11-26
+ packages\web\src\components\ProtectedRoute.tsx                |    0.00 |   14.29 | 4-15
+ packages\web\src\contexts\AuthContext.tsx                     |    0.00 |    6.90 | 16-28,33-38,42-98,102-106
+ packages\web\src\hooks\useMetrics.ts                          |    0.00 |    6.00 | 20-66
+ packages\web\src\hooks\useProjectDetails.ts                   |    0.00 |    6.00 | 18-64
+ packages\web\src\hooks\useProjects.ts                         |    0.00 |    6.98 | 11-50
+ packages\web\src\hooks\useSprintStream.ts                     |    0.00 |    7.69 | 11-46
+ packages\web\src\lib\api-client.ts                            |   15.38 |    8.13 | 17-21,29-132,136-139
+ packages\web\src\pages\AnalyticsPage.tsx                      |    0.00 |    3.85 | 4-18,23-48,53-86
+ packages\web\src\pages\DashboardPage.tsx                      |    0.00 |    7.69 | 5-40
+ packages\web\src\pages\LoginPage.tsx                          |    0.00 |    5.26 | 5-58
+ packages\web\src\pages\ProjectPage.tsx                        |    0.00 |    3.92 | 4-52
+ packages\web\src\pages\RegisterPage.tsx                       |    0.00 |    4.35 | 5-70
+ packages\web\src\pages\SprintViewerPage.tsx                   |    0.00 |    7.14 | 6-57
+---------------------------------------------------------------|---------|---------|-------------------
+
+ 838 pass
+ 11 fail
+ 1797 expect() calls
+Ran 849 tests across 75 files. [31.05s]

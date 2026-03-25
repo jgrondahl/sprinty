@@ -1,0 +1,9 @@
+cmdCreateStory function
+writeBackStory function
+[31mError: --title and --description are required[0m
+  Usage: splinty create-story --title <title> --description <text>
+JiraConnector function
+buildStoryDescription function
+buildBugDescription function
+buildQaResultComment function
+RateLimitError function

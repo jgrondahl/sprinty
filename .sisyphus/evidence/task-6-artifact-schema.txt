@@ -1,0 +1,18 @@
+Task 6: Artifact Model DB Schema
+
+Files:
+- packages/db/src/schema/artifact_versions.ts
+- packages/db/src/schema/artifact_evaluations.ts
+- packages/db/src/schema/artifact_lineage.ts
+- packages/db/src/schema/index.ts
+- packages/db/src/schema/artifact-versions.test.ts
+
+Verification:
+- bun test packages/db/src/schema/artifact-versions.test.ts
+  -> 8 pass, 0 fail
+- bun -e "import { artifactVersions, artifactEvaluations, artifactLineage } from './packages/db/src/schema/index'; console.log(artifactVersions && artifactEvaluations && artifactLineage ? 'OK' : 'FAIL')"
+  -> OK
+- npx tsc --noEmit
+  -> pass
+
+Result: PASS

@@ -1,0 +1,542 @@
+bun test v1.3.10 (30e609e0)
+
+packages\core\src\architecture-enforcer.test.ts:
+(pass) architecture-enforcer schemas > valid EnforcementReport parses
+(pass) architecture-enforcer schemas > valid ArchitectureViolation parses
+(pass) architecture-enforcer schemas > valid ComplianceMetrics parses
+(pass) architecture-enforcer schemas > valid ModuleLock parses
+(pass) architecture-enforcer schemas > invalid schema data is rejected
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > import from exposed interface does not violate
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > import from internal path of another module violates
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > self import within same module does not violate
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > no cross module imports passes dependency rule
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > multiple internal cross module imports produce multiple violations
+(pass) ArchitectureEnforcer rule 1 - dependency boundaries > dynamic import and require are checked
+(pass) ArchitectureEnforcer rule 2 - required exports > all exposed interfaces exported produces no required export violations
+(pass) ArchitectureEnforcer rule 2 - required exports > missing export is warning violation
+(pass) ArchitectureEnforcer rule 2 - required exports > modules absent from fileContents are skipped
+(pass) ArchitectureEnforcer rule 2 - required exports > export forms function const class type interface are detected
+(pass) ArchitectureEnforcer rule 2 - required exports > re-export with alias satisfies interface name
+(pass) ArchitectureEnforcer rule 3 - file ownership > all files inside ownedFiles passes
+(pass) ArchitectureEnforcer rule 3 - file ownership > file outside ownedFiles creates error
+(pass) ArchitectureEnforcer rule 3 - file ownership > empty fileContents passes ownership
+(pass) ArchitectureEnforcer rule 3 - file ownership > multiple unauthorized files create multiple violations
+(pass) ArchitectureEnforcer rule 4 - technology compliance > matching tech stack with no competitors passes technology check
+(pass) ArchitectureEnforcer rule 4 - technology compliance > competitor framework in dependencies triggers warning
+(pass) ArchitectureEnforcer rule 4 - technology compliance > no packageJson skips technology checks entirely
+(pass) ArchitectureEnforcer rule 4 - technology compliance > multiple framework and test framework competitors are reported
+(pass) ArchitectureEnforcer rule 4 - technology compliance > technology constraint forbidden package severity is honored
+(pass) ArchitectureEnforcer report assembly and integration > full validate with clean code returns pass
+(pass) ArchitectureEnforcer report assembly and integration > full validate with mixed violations returns fail and correct counts
+(pass) ArchitectureEnforcer report assembly and integration > warn status when only warnings exist
+(pass) ArchitectureEnforcer report assembly and integration > violations are sorted deterministically
+(pass) ArchitectureEnforcer report assembly and integration > telemetry hook receives enforcement completed event
+(pass) ArchitectureEnforcer report assembly and integration > telemetry violationsByRule groups counts by deterministic buckets
+
+packages\core\src\architecture-plan.test.ts:
+(pass) ArchitecturePlanSchema > valid global-level plan parses correctly [15.00ms]
+(pass) ArchitecturePlanSchema > valid sprint-level plan parses correctly
+(pass) ArchitecturePlanSchema > invalid plan missing required fields fails
+(pass) ArchitecturePlanSchema > scopeKey format validation works for sprint plans
+(pass) enum schemas > PlanQualityScore status values are correct enum
+(pass) enum schemas > ArchitectureConstraint type values are correct enum
+(pass) supporting schemas > TechStackDecision supports optional database field [16.00ms]
+(pass) supporting schemas > HandoffDocument remains backward compatible without new fields
+(pass) supporting schemas > HandoffDocument parses with new optional typed fields [31.00ms]
+(pass) supporting schemas > ArchitecturePlanRef, SprintTaskPlanRef, and ImplementationTaskRef parse correctly
+(pass) ArchitecturePlanManager > save and load roundtrip works [16.00ms]
+(pass) ArchitecturePlanManager > loadActive finds active plan by level and scopeKey
+(pass) ArchitecturePlanManager > supersede updates both plans correctly
+(pass) ArchitecturePlanManager > load returns null for non-existent plan
+
+packages\core\src\diff.test.ts:
+(pass) DiffManager.generateDiff > returns empty patch for identical files
+(pass) DiffManager.generateDiff > handles a single line replacement
+(pass) DiffManager.generateDiff > handles multi-line additions
+(pass) DiffManager.generateDiff > handles multi-line deletions
+(pass) DiffManager.generateDiff > handles mixed changes with multiple hunks
+(pass) DiffManager.generateDiff > handles file with no trailing newline
+(pass) DiffManager.generateDiff > supports custom context lines
+(pass) DiffManager.applyPatch > applies a simple patch successfully
+(pass) DiffManager.applyPatch > applies multi-hunk patches
+(pass) DiffManager.applyPatch > applies with context matching under shifted position
+(pass) DiffManager.applyPatch > reports failed hunk when context does not match
+(pass) DiffManager.applyPatch > applies patch to empty file
+(pass) DiffManager round-trip and edge cases > round-trips generated patch back to new content
+(pass) DiffManager round-trip and edge cases > handles empty files
+(pass) DiffManager round-trip and edge cases > handles single-line files
+(pass) DiffManager round-trip and edge cases > handles long files (100+ lines) [15.00ms]
+(pass) DiffManager.applyPatches > applies multiple file patches with mixed success
+(pass) DiffManager.applyPatches > treats missing file content as empty string
+
+packages\core\src\gate.test.ts:
+(pass) GateConfigSchema > parses valid config
+(pass) GateConfigSchema > rejects invalid requireApproval
+(pass) GateConfigSchema > allows missing notifyVia
+(pass) GateConfigSchema > rejects unknown notifyVia
+(pass) GateConfigSchema > parses config with never approval policy
+
+packages\core\src\handoff.test.ts:
+(pass) HandoffManager.create() > creates a valid handoff document
+(pass) HandoffManager.create() > includes provided artifacts
+(pass) HandoffManager.create() > sets a valid ISO timestamp [16.00ms]
+(pass) HandoffManager.save() + loadLatest() > round-trips a handoff document
+(pass) HandoffManager.save() + loadLatest() > returns null when no handoff exists for agent
+(pass) HandoffManager.save() + loadLatest() > returns most recent when multiple handoffs exist [16.00ms]
+(pass) HandoffManager.loadAll() > returns all saved handoffs in order [15.00ms]
+(pass) HandoffManager.loadAll() > returns empty array when no handoffs exist [16.00ms]
+(pass) HandoffManager.summarize() > produces a non-empty string
+(pass) HandoffManager.summarize() > includes key fields in summary
+(pass) HandoffManager.summarize() > stays within 2000 character limit
+
+packages\core\src\import-graph.test.ts:
+(pass) ImportGraphBuilder.build() > returns empty map for empty project
+(pass) ImportGraphBuilder.build() > includes single file with empty dependency set [16.00ms]
+(pass) ImportGraphBuilder.build() > builds edge for relative import between two files
+(pass) ImportGraphBuilder.build() > resolves relative imports with and without explicit extension
+(pass) ImportGraphBuilder.build() > excludes non-relative package imports from graph
+(pass) ImportGraphBuilder.getTransitiveDependencies() > returns direct dependency for single edge
+(pass) ImportGraphBuilder.getTransitiveDependencies() > returns full transitive chain
+(pass) ImportGraphBuilder.getTransitiveDependencies() > handles cycles without infinite loop and excludes source file
+(pass) ImportGraphBuilder.getImpactedFiles() > returns empty set when changed file has no importers
+(pass) ImportGraphBuilder.getImpactedFiles() > returns direct importer for changed file
+(pass) ImportGraphBuilder.getImpactedFiles() > returns transitive importers in reverse dependency chain
+
+packages\core\src\integration-sandbox.test.ts:
+(pass) MockIntegrationSandbox > addService + getServiceUrl
+(pass) MockIntegrationSandbox > executeInService with queued result
+(pass) MockIntegrationSandbox > executeInService default success result
+(pass) MockIntegrationSandbox > cleanup no-op does not throw
+
+packages\core\src\ledger.test.ts:
+(pass) LedgerManager.init() > creates AGENTS.md file
+(pass) LedgerManager.init() > file contains expected header content
+(pass) LedgerManager.upsertStory() > adds a new story to the ledger
+(pass) LedgerManager.upsertStory() > upserts multiple stories without duplication
+(pass) LedgerManager.upsertStory() > loads all 3 stories after 3 upserts
+(pass) LedgerManager.updateState() > updates state of an existing story [16.00ms]
+(pass) LedgerManager.load() > returns empty array on empty ledger
+(pass) LedgerManager.load() > simulates restart: new LedgerManager instance reads same data
+(pass) LedgerManager.getSnapshot() > throws if ledger not initialized
+
+packages\core\src\plan-revision.test.ts:
+(pass) plan-revision schemas > PlanRevisionReasonSchema accepts all expected enum values
+(pass) plan-revision schemas > PlanRevisionReasonSchema rejects invalid enum value
+(pass) plan-revision schemas > PlanRevisionLevelSchema accepts global and sprint
+(pass) plan-revision schemas > PlanRevisionLevelSchema rejects invalid value
+(pass) plan-revision schemas > PlanRevisionTriggerSchema parses minimal required data
+(pass) plan-revision schemas > PlanRevisionTriggerSchema rejects empty description
+(pass) plan-revision schemas > RevisionClassificationPolicySchema parses valid policy
+(pass) plan-revision schemas > RevisionClassificationPolicySchema rejects invalid rule
+(pass) plan-revision schemas > DriftWeightsSchema provides defaults and validates sum
+(pass) plan-revision schemas > DriftWeightsSchema rejects invalid sum
+(pass) plan-revision schemas > DriftWeightsSchema allows tolerance near 1.0
+(pass) plan-revision schemas > DriftMeasurementSchema applies default threshold
+(pass) plan-revision schemas > EvidenceSummarySchema parses valid shape
+(pass) plan-revision schemas > EvidenceSummarySchema rejects invalid resource limit
+(pass) computeDriftScore > zero violations returns zero score and not exceeded
+(pass) computeDriftScore > maximum violations saturate score at 100
+(pass) computeDriftScore > mixed violations computes deterministic rounded score
+(pass) computeDriftScore > custom weights are honored
+(pass) computeDriftScore > custom threshold updates exceeded decision
+(pass) computeDriftScore > zero totals avoid division by zero and can still saturate to max
+(pass) classifyRevisionLevel > global evidence classifies as global
+(pass) classifyRevisionLevel > sprint-only evidence classifies as sprint
+(pass) classifyRevisionLevel > mixed evidence defaults to safer global
+(pass) classifyRevisionLevel > human-override always classifies as global
+(pass) classifyRevisionLevel > empty evidence falls back to trigger level then sprint
+(pass) classifyRevisionLevel > custom policy changes classification behavior
+(pass) detectRepeatedEnforcementViolations > no violations does not trigger
+(pass) detectRepeatedEnforcementViolations > single report does not trigger by default
+(pass) detectRepeatedEnforcementViolations > same constraint repeated across reports triggers
+(pass) detectRepeatedEnforcementViolations > different constraints across reports do not trigger
+(pass) detectRepeatedEnforcementViolations > custom minRepeats is respected
+(pass) detectDriftTrigger > below threshold does not trigger
+(pass) detectDriftTrigger > single exceeded does not trigger without critical flag
+(pass) detectDriftTrigger > two consecutive exceeded triggers
+(pass) detectDriftTrigger > critical boundary violation triggers immediately on single exceedance
+(pass) detectDriftTrigger > non-consecutive exceeded does not trigger when requiring consecutive
+(pass) detectDriftTrigger > non-consecutive exceeded triggers when not requiring consecutive and enough hits
+(pass) detectSandboxConstraintTrigger > no failures does not trigger
+(pass) detectSandboxConstraintTrigger > single failure does not trigger by default
+(pass) detectSandboxConstraintTrigger > repeated same-task distinct failures trigger
+(pass) detectSandboxConstraintTrigger > different-task failures do not trigger for same task repeat rule
+(pass) detectSandboxConstraintTrigger > custom minFailures is respected
+(pass) buildEvidenceSummary > basic trigger with no reports still builds valid summary
+(pass) buildEvidenceSummary > extracts failingModules and violatedConstraintIds from reports
+(pass) buildEvidenceSummary > new-capability-required maps trigger evidence into missingCapabilities
+(pass) buildEvidenceSummary > defaults level to sprint when trigger level missing
+(pass) buildEvidenceSummary > uses explicit trigger level when provided
+
+packages\core\src\plan-validation.test.ts:
+(pass) checkAcyclicDependencies > acyclic graph passes [15.00ms]
+(pass) checkAcyclicDependencies > direct cycle (A→B→A) detected with cycle path
+(pass) checkAcyclicDependencies > indirect cycle (A→B→C→A) detected
+(pass) checkAcyclicDependencies > unknown dependency reference is reported as error
+(pass) checkAcyclicDependencies > self-dependency detected as cycle
+(pass) checkAcyclicDependencies > empty modules array passes
+(pass) checkStoryCoverage > all stories mapped passes
+(pass) checkStoryCoverage > unmapped story reports error with storyId
+(pass) checkStoryCoverage > empty storyModuleMapping passes
+(pass) checkModuleCoverage > all modules have owning stories passes
+(pass) checkModuleCoverage > orphaned module reports error
+(pass) checkInterfaceOwnership > unique interfaces passes
+(pass) checkInterfaceOwnership > duplicate interface across modules reports both modules
+(pass) validatePlan > clean plan returns valid true with no errors
+(pass) validatePlan > plan with multiple issues collects all errors and valid false
+(pass) scorePlan > well-designed plan scores high and passes
+(pass) scorePlan > plan with cycle sets dependencySanity to 0
+(pass) scorePlan > high fan-out penalizes dependencySanity
+(pass) scorePlan > overlapping responsibilities penalize cohesion
+(pass) scorePlan > missing stack tokens penalize stackConsistency
+(pass) scorePlan > overall formula uses weighted rounded computation
+(pass) scorePlan > status thresholds are pass, review, fail
+(pass) generateDigest > basic digest includes correct task module
+(pass) generateDigest > includes direct dependencies in includedModules
+(pass) generateDigest > filters constraints to relevant and technology constraints
+(pass) generateDigest > filters exposedInterfaces to included modules only
+(pass) generateDigest > digest generation is deterministic
+(pass) generateDigest > digestId format is correct
+(pass) generateDigest > unknown module name throws Error
+(pass) generateDigest > truncation works when maxChars is very small
+(pass) generateDigest > truncation keeps task module in includedModules
+(pass) generateDigest > result validates against PlanDigestSchema
+
+packages\core\src\project-context.test.ts:
+(pass) ProjectContextBuilder.build() > returns null when no project memory exists
+(pass) ProjectContextBuilder.build() > returns ProjectContext when project memory exists
+(pass) ProjectContextBuilder.build() > reads only allowed file extensions
+(pass) ProjectContextBuilder.build() > respects the 20-file cap [63.00ms]
+(pass) ProjectContextBuilder.buildEmpty() > returns valid empty ProjectContext with correct projectId
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > prioritises target files over other project files [16.00ms]
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > expands target files to include transitive import dependencies
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > includes remaining files up to cap after priority files [15.00ms]
+(pass) ProjectContextBuilder.build() — target files with import graph expansion > falls back to flat scan when no targetFiles provided
+
+packages\core\src\project-memory.manager.test.ts:
+(pass) ProjectMemoryManager > initialize creates project-memory.json and returns fresh memory
+(pass) ProjectMemoryManager > save and load round-trip project memory
+(pass) ProjectMemoryManager > addStoryManifest appends manifest [16.00ms]
+(pass) ProjectMemoryManager > addFileEntry appends file index entry
+(pass) ProjectMemoryManager > addArtifactEntry appends artifact index entry
+(pass) ProjectMemoryManager > getArtifactsByType returns only matching type entries [15.00ms]
+(pass) ProjectMemoryManager > getArtifactsByType returns empty array when no entries match
+(pass) ProjectMemoryManager > getArtifactsByType returns empty array when memory does not exist
+(pass) ProjectMemoryManager > getArtifactsBySprintId returns only entries with matching sprintId
+(pass) ProjectMemoryManager > getArtifactsBySprintId returns empty array when memory does not exist
+(pass) ProjectMemoryManager > getSupersessionChain returns single entry when no supersedes link
+(pass) ProjectMemoryManager > getSupersessionChain walks supersedes links from newest to oldest [16.00ms]
+(pass) ProjectMemoryManager > getSupersessionChain halts on cycle to prevent infinite loop
+(pass) ProjectMemoryManager > getSupersessionChain returns empty array when artifact id not found
+(pass) ProjectMemoryManager > getSupersessionChain returns empty array when memory does not exist
+(pass) ProjectMemoryManager > load returns null if project-memory.json does not exist [16.00ms]
+(pass) StoryManifestWriter > write and read round-trip story manifest
+(pass) StoryManifestWriter > read returns null when story-manifest.json does not exist
+
+packages\core\src\project-memory.test.ts:
+(pass) StoryManifestSchema > parses a valid manifest
+(pass) StoryManifestSchema > rejects missing required fields
+(pass) StoryManifestSchema > accepts commands.run as optional
+(pass) StoryManifestSchema > rejects missing architectureDecisions
+(pass) FileEntrySchema > parses a valid file entry
+(pass) Artifact schemas > accepts selected enum values for artifact type
+(pass) Artifact schemas > rejects unknown artifact type values
+(pass) Artifact schemas > parses artifact entry without optional fields
+(pass) Artifact schemas > accepts optional supersedes field
+(pass) StackInfoSchema > parses minimal fields and defaults additionalDeps
+(pass) ProjectMemorySchema > parses with empty stories, fileIndex, and artifactIndex arrays
+(pass) ProjectMemorySchema > parses nested StoryManifest entries
+(pass) ProjectContextSchema > parses with empty relevantFiles
+(pass) ProjectContextSchema > parses with FileContent entries
+
+packages\core\src\resume.test.ts:
+(pass) ResumePointSchema > parses a valid resume point
+(pass) ResumePointSchema > rejects invalid resume point
+(pass) ResumeManager.save() > writes resume-point.json to workspace [15.00ms]
+(pass) ResumeManager.load() > reads and parses saved resume point
+(pass) ResumeManager.load() > returns null when no resume point exists
+(pass) ResumeManager.clear() > removes resume-point.json from workspace
+(pass) ResumeManager.exists() > returns false when file does not exist
+(pass) ResumeManager.exists() > returns true when file exists
+(pass) ResumeManager round-trip > save then load returns identical data [16.00ms]
+
+packages\core\src\retrieval-tracking.test.ts:
+(pass) RetrievalTracker.record() > records a valid attempt
+(pass) RetrievalTracker.record() > throws on invalid attempt
+(pass) RetrievalTracker.getAttempts() > returns all attempts when no filter is provided
+(pass) RetrievalTracker.getAttempts() > filters attempts by storyId
+(pass) RetrievalTracker.computeMetrics() > returns retrievalRate 1.0 and empty missedFiles for zero attempts
+(pass) RetrievalTracker.computeMetrics() > computes correct retrievalRate and missedFiles for partial retrieval
+(pass) RetrievalTracker.computeMetrics() > computes full retrieval with rate 1.0 and no missed files
+(pass) RetrievalTracker.computeMissedFiles() > returns requested files that were never retrieved across story attempts
+(pass) RetrievalTracker.clear() > empties attempts
+(pass) RetrievalTracker.detectContextGap() > returns null when there are no attempts for the project
+(pass) RetrievalTracker.detectContextGap() > returns null when failure rate is below threshold
+(pass) RetrievalTracker.detectContextGap() > returns escalation recommendation when failure rate exceeds threshold
+(pass) RetrievalTracker.detectContextGap() > respects a custom threshold
+(pass) RetrievalTracker.detectContextGap() > sorts missedFileFrequency by descending count
+(pass) RetrievalTracker.detectContextGap() > ignores attempts from other projects when computing escalation
+
+packages\core\src\sandbox.test.ts:
+(pass) SandboxConfigSchema > validates a valid config
+(pass) SandboxConfigSchema > applies default for maxDiskMb
+(pass) SandboxConfigSchema > rejects empty image
+(pass) SandboxConfigSchema > rejects negative timeoutMs
+(pass) SandboxConfigSchema > rejects zero memoryLimitMb
+(pass) SandboxResultSchema > validates a minimal result
+(pass) SandboxResultSchema > validates a result with resource usage
+(pass) SandboxResultSchema > validates a result with resource limit violation
+(pass) ResourceUsageSchema > validates resource usage
+(pass) ResourceLimitViolationSchema > validates all limit types
+(pass) ResourceLimitViolationSchema > rejects invalid limit type
+(pass) ExecOptsSchema > validates with all fields
+(pass) ExecOptsSchema > validates empty object
+(pass) SandboxImageLockfileSchema > validates a lockfile with entries
+(pass) SandboxImageLockfileSchema > validates an empty lockfile
+(pass) SandboxImageLockfileSchema > rejects invalid runtime
+(pass) MockSandbox > tracks init call and sets initialized flag
+(pass) MockSandbox > returns default success result for execute
+(pass) MockSandbox > returns queued execute results in order
+(pass) MockSandbox > falls back to default result after queue is exhausted
+(pass) MockSandbox > stores and retrieves written files
+(pass) MockSandbox > readFile throws for missing files
+(pass) MockSandbox > readFile returns preconfigured results
+(pass) MockSandbox > tracks cleanup and sets cleanedUp flag
+(pass) MockSandbox > throws configured init error
+(pass) MockSandbox > throws configured execute error
+(pass) MockSandbox > getExecuteCalls filters only execute calls
+(pass) MockSandbox > getWrittenFiles returns all written files
+(pass) MockSandbox > satisfies SandboxEnvironment interface
+(pass) MockSandbox > records call timestamps
+(pass) makeSuccessResult > creates a success result with defaults
+(pass) makeSuccessResult > creates a success result with custom stdout
+(pass) makeFailResult > creates a fail result with defaults
+(pass) makeFailResult > creates a fail result with custom exit code
+
+packages\core\src\service-guard.test.ts:
+(pass) extractServiceNames > returns unique top-level directory segments
+(pass) extractServiceNames > returns empty array for empty modules
+(pass) extractServiceNames > normalizes backslashes to forward slashes
+(pass) extractServiceNames > treats single-segment directory as service name
+(pass) ServiceCountGuard > returns true when service count is within limit
+(pass) ServiceCountGuard > returns false when limit exceeded and gate rejects
+(pass) ServiceCountGuard > returns true when limit exceeded and gate approves
+(pass) ServiceCountGuard > returns false without calling gate when requireHumanApproval is false
+(pass) ServiceCountGuard > passes project id and service list to gate
+(pass) ServiceGuardrailsSchema defaults > defaults maxServicesPerProject to 4
+(pass) ServiceGuardrailsSchema defaults > defaults requireHumanApproval to true
+(pass) WorkspaceManager service workspace > createServiceWorkspace creates expected directory structure [16.00ms]
+(pass) WorkspaceManager service workspace > createServiceWorkspace returns WorkspaceState with storyId prefixed service:
+(pass) WorkspaceManager service workspace > listServiceNames returns all created service names
+(pass) WorkspaceManager service workspace > listServiceNames returns empty array when no services exist
+(pass) WorkspaceManager service workspace > getServiceWorkspacePath returns correct path
+(pass) WorkspaceManager service workspace > writeFile works inside service workspace
+
+packages\core\src\sprint-state.test.ts:
+(pass) SprintCheckpointSchema > parses valid checkpoint
+(pass) SprintCheckpointSchema > rejects invalid checkpoint fields
+(pass) PlannedSprintStateSchema > parses valid planned sprint state
+(pass) PlannedSprintStateSchema > applies defaults for revision limits and story counts
+(pass) DefaultHumanGate > throws when approval is requested
+(pass) SprintCheckpointManager > save then load returns persisted checkpoint [15.00ms]
+(pass) SprintCheckpointManager > returns null when checkpoint file is missing
+(pass) SprintCheckpointManager > returns null for invalid checkpoint JSON
+(pass) SprintCheckpointManager > clear removes checkpoint file and exists reflects state
+
+packages\core\src\storage-adapter.test.ts:
+(pass) storage-adapter schemas > parses mkdir options
+(pass) storage-adapter schemas > parses rm options
+(pass) storage-adapter schemas > parses stat payload
+(pass) StorageAdapter contract > accepts a complete adapter implementation
+
+packages\core\src\story-dependencies.test.ts:
+(pass) topologicalSortStories > returns empty array for empty input
+(pass) topologicalSortStories > returns single story with no dependencies
+(pass) topologicalSortStories > orders dependency before dependent story
+(pass) topologicalSortStories > orders chained dependencies correctly
+(pass) topologicalSortStories > throws when dependency cycle exists
+(pass) topologicalSortStories > ignores unknown dependencies
+(pass) detectFileConflicts > returns empty map when no file conflicts exist
+(pass) detectFileConflicts > returns file conflict when multiple stories claim same file
+(pass) detectFileConflicts > does not include uniquely claimed files in result
+
+packages\core\src\story-metrics.test.ts:
+(pass) StoryMetricsSchema > parses valid object
+(pass) SprintTelemetrySchema > parses with stories array
+(pass) AppBuilderResultSchema > allows optional metrics field
+
+packages\core\src\story-state-machine.test.ts:
+(pass) StoryStateMachine > canTransition() > returns true for RAW → EPIC
+(pass) StoryStateMachine > canTransition() > returns false for RAW → MERGED (illegal jump)
+(pass) StoryStateMachine > canTransition() > returns false for MERGED → any state (terminal)
+(pass) StoryStateMachine > canTransition() > allows IN_REVIEW → IN_PROGRESS (rework)
+(pass) StoryStateMachine > canTransition() > allows IN_REVIEW → DONE (approved)
+(pass) StoryStateMachine > getNextStates() > returns [EPIC] for RAW
+(pass) StoryStateMachine > getNextStates() > returns [DONE, IN_PROGRESS] for IN_REVIEW
+(pass) StoryStateMachine > getNextStates() > returns empty array for MERGED
+(pass) StoryStateMachine > getResponsibleAgent() > returns BUSINESS_OWNER for RAW
+(pass) StoryStateMachine > getResponsibleAgent() > returns DEVELOPER for IN_PROGRESS
+(pass) StoryStateMachine > getResponsibleAgent() > returns QA_ENGINEER for IN_REVIEW
+(pass) StoryStateMachine > getResponsibleAgent() > returns ORCHESTRATOR for MERGED
+(pass) StoryStateMachine > transition() > transitions RAW → EPIC successfully
+(pass) StoryStateMachine > transition() > transitions through all valid states in sequence
+(pass) StoryStateMachine > transition() > does not mutate original story
+(pass) StoryStateMachine > transition() > throws InvalidStateTransitionError for illegal transition
+(pass) StoryStateMachine > transition() > error message describes the illegal transition
+(pass) StoryStateMachine > transition() > throws on RAW → IN_PROGRESS (skips states)
+(pass) StoryStateMachine > transition() > throws on attempting to leave MERGED (terminal)
+(pass) StoryStateMachine > transition() > updates updatedAt on transition
+
+packages\core\src\task-decomposition.test.ts:
+(pass) task-decomposition schema parsing > parses valid ImplementationTaskSchema
+(pass) task-decomposition schema parsing > rejects invalid ImplementationTaskSchema with empty storyIds
+(pass) task-decomposition schema parsing > parses valid IntegrationTaskSchema
+(pass) task-decomposition schema parsing > rejects invalid IntegrationTaskSchema type
+(pass) task-decomposition schema parsing > parses valid TaskGroupSchema
+(pass) task-decomposition schema parsing > rejects invalid TaskGroupSchema with non-positive groupId
+(pass) task-decomposition schema parsing > parses valid SprintTaskPlanSchema
+(pass) task-decomposition schema parsing > rejects invalid SprintTaskPlanSchema with schemaVersion 0
+(pass) task-decomposition schema parsing > applies default DecompositionGuardrails values
+(pass) task-decomposition schema parsing > rejects invalid DecompositionGuardrails values
+(pass) TaskDecomposer.decompose > single story single module single interface yields one task
+(pass) TaskDecomposer.decompose > single story multi-module yields tasks per module interfaces
+(pass) TaskDecomposer.decompose > multi-story shared modules keep correct storyIds per task
+(pass) TaskDecomposer.decompose > module dependencies produce task dependencies and inputs
+(pass) TaskDecomposer.decompose > task groups are derived from executionOrder
+(pass) TaskDecomposer.decompose > creates integration tasks for modules with dependencies
+(pass) TaskDecomposer.decompose > creates integration phase depending on all task groups
+(pass) TaskDecomposer.decompose > filters acceptance criteria by module or interface name match
+(pass) TaskDecomposer guardrails > default guardrails are applied when none provided
+(pass) TaskDecomposer guardrails > custom guardrails override defaults
+(pass) TaskDecomposer guardrails > maxTasksPerStory can trigger merge pass and reduce task count
+(pass) TaskDecomposer guardrails > maxTasksPerSprint exceeded throws descriptive error
+(pass) decomposition validation helpers > validateNoFileCollisions detects overlapping files
+(pass) decomposition validation helpers > validateNoFileCollisions passes with no overlap
+(pass) decomposition validation helpers > validateTaskDependencies detects unknown task references
+(pass) decomposition validation helpers > validateTaskDependencies detects cycles
+(pass) decomposition validation helpers > validateDecomposition combines collision and dependency errors
+
+packages\core\src\telemetry-retention.test.ts:
+(pass) TelemetryRetentionManager.enforce > deletes oldest files beyond maxSprints
+(pass) TelemetryRetentionManager.enforce > keeps files within limit
+(pass) TelemetryRetentionManager.enforce > archives when archiveExpired=true
+(pass) TelemetryRetentionManager.archive > produces valid gzip
+
+packages\core\src\types.test.ts:
+(pass) StorySchema > parses a valid story
+(pass) StorySchema > rejects story missing required title
+(pass) StorySchema > rejects story missing required id
+(pass) StorySchema > accepts optional storyPoints and sourceId [16.00ms]
+(pass) StorySchema > accepts dependsOn when provided
+(pass) StorySchema > defaults dependsOn to empty array
+(pass) StorySchema > rejects invalid state enum
+(pass) StorySchema > accepts story with optional epicId
+(pass) EpicSchema > parses valid epic data
+(pass) EpicSchema > rejects invalid epic status
+(pass) Roadmap schemas > parses roadmap item with optional dates
+(pass) Roadmap schemas > parses valid roadmap
+(pass) HandoffDocumentSchema > parses a valid handoff document
+(pass) HandoffDocumentSchema > rejects missing storyId
+(pass) HandoffDocumentSchema > defaults artifacts to empty array
+(pass) HandoffDocumentSchema > accepts optional projectContext
+(pass) AgentConfigSchema > parses valid agent config with defaults
+(pass) AgentConfigSchema > rejects temperature out of range
+(pass) ModelConfigSchema > parses a valid model config with required field only
+(pass) ModelConfigSchema > parses a valid model config with all fields
+(pass) ModelConfigSchema > rejects model with empty string
+(pass) ModelConfigSchema > rejects temperature out of range (too high)
+(pass) ModelConfigSchema > rejects maxTokens as non-positive integer
+(pass) WorkspaceStateSchema > parses valid workspace state
+(pass) AppBuilderResultSchema > parses valid app builder result
+(pass) StoryState enum > has all 10 states
+(pass) AgentPersona enum > has all 12 personas
+
+packages\core\src\workspace.test.ts:
+(pass) WorkspaceManager.createWorkspace() > creates expected directory structure
+(pass) WorkspaceManager.createWorkspace() > returns correct projectId and storyId
+(pass) WorkspaceManager.createWorkspace() > basePath contains projectId and storyId
+(pass) WorkspaceManager.createWorkspace() > initializes files and agentsLog as empty
+(pass) WorkspaceManager.createWorkspace() > is idempotent (can be called multiple times)
+(pass) WorkspaceManager.loadWorkspace() > rehydrates a workspace from disk [16.00ms]
+(pass) WorkspaceManager.loadWorkspace() > throws WorkspaceNotFoundError for non-existent workspace
+(pass) WorkspaceManager.loadWorkspace() > restores agentsLog from disk
+(pass) WorkspaceManager.readFile() / writeFile() > writes and reads a file round-trip
+(pass) WorkspaceManager.readFile() / writeFile() > writes inside subdirectory
+(pass) WorkspaceManager.readFile() / writeFile() > throws if file does not exist
+(pass) WorkspaceManager.listFiles() > lists written files [15.00ms]
+(pass) WorkspaceManager.appendLog() > appends log entries to agent.log
+(pass) WorkspaceManager.appendLog() > adds entries to in-memory agentsLog
+(pass) WorkspaceManager path traversal protection > throws PathTraversalError for ../ escape
+(pass) WorkspaceManager path traversal protection > does not write file outside workspace on traversal attempt
+(pass) ProjectWorkspace methods > createProjectWorkspace creates project/, project/src/, and project/artifacts/ directories
+(pass) ProjectWorkspace methods > writeProjectFile + readProjectFile round-trip for a simple file
+(pass) ProjectWorkspace methods > writeProjectFile creates nested directories
+(pass) ProjectWorkspace methods > listProjectFiles returns relative paths of written files [16.00ms]
+(pass) ProjectWorkspace methods > listProjectFiles returns [] for empty project workspace
+(pass) ProjectWorkspace methods > readProjectFile throws on path traversal
+(pass) ProjectWorkspace methods > writeProjectFile throws on path traversal
+(pass) ProjectWorkspace methods > promoteFiles copies files from story workspace to project workspace
+(pass) ProjectWorkspace methods > promoteFiles returns [] when source directory does not exist
+(pass) ProjectWorkspace methods > promoteFiles preserves directory structure [16.00ms]
+--------------------------------------------------|---------|---------|-------------------
+File                                              | % Funcs | % Lines | Uncovered Line #s
+--------------------------------------------------|---------|---------|-------------------
+All files                                         |   93.86 |   96.53 |
+ packages\core\src\architecture-enforcer.test.ts  |   96.36 |  100.00 | 
+ packages\core\src\architecture-enforcer.ts       |   97.83 |  100.00 | 
+ packages\core\src\architecture-plan.test.ts      |  100.00 |  100.00 | 
+ packages\core\src\architecture-plan.ts           |   90.00 |  100.00 | 
+ packages\core\src\diff.test.ts                   |  100.00 |  100.00 | 
+ packages\core\src\diff.ts                        |   92.86 |   93.92 | 115-119,144-145,150-151,161-162,227-228,284-285,294-295
+ packages\core\src\fs-storage-adapter.ts          |   84.62 |   44.44 | 63-107
+ packages\core\src\gate.test.ts                   |  100.00 |  100.00 | 
+ packages\core\src\handoff.test.ts                |  100.00 |  100.00 | 
+ packages\core\src\handoff.ts                     |  100.00 |  100.00 | 
+ packages\core\src\import-graph.test.ts           |  100.00 |  100.00 | 
+ packages\core\src\import-graph.ts                |  100.00 |  100.00 | 
+ packages\core\src\integration-sandbox-mock.ts    |   83.33 |   85.71 | 23-26
+ packages\core\src\integration-sandbox.test.ts    |  100.00 |  100.00 | 
+ packages\core\src\ledger.test.ts                 |  100.00 |  100.00 | 
+ packages\core\src\ledger.ts                      |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.test.ts          |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.ts               |   92.31 |   94.74 | 18-28,216,248
+ packages\core\src\plan-validation.test.ts        |  100.00 |  100.00 | 
+ packages\core\src\plan-validation.ts             |   92.06 |   96.48 | 59,66-68,70-72,84-85,154,265,336-337,510-511
+ packages\core\src\project-context.test.ts        |  100.00 |  100.00 | 
+ packages\core\src\project-context.ts             |  100.00 |  100.00 | 
+ packages\core\src\project-memory.manager.test.ts |  100.00 |  100.00 | 
+ packages\core\src\project-memory.test.ts         |  100.00 |  100.00 | 
+ packages\core\src\project-memory.ts              |   94.12 |  100.00 | 
+ packages\core\src\resume.test.ts                 |  100.00 |  100.00 | 
+ packages\core\src\resume.ts                      |  100.00 |  100.00 | 
+ packages\core\src\retrieval-tracking.test.ts     |  100.00 |  100.00 | 
+ packages\core\src\retrieval-tracking.ts          |   94.12 |  100.00 | 
+ packages\core\src\sandbox-mock.ts                |  100.00 |  100.00 | 
+ packages\core\src\sandbox.test.ts                |  100.00 |  100.00 | 
+ packages\core\src\sandbox.ts                     |    0.00 |   38.10 | 120-121,127-132,138-142
+ packages\core\src\service-guard.test.ts          |   96.88 |   98.99 | 133-134
+ packages\core\src\service-guard.ts               |   83.33 |  100.00 | 
+ packages\core\src\sprint-state.test.ts           |  100.00 |  100.00 | 
+ packages\core\src\sprint-state.ts                |   85.71 |  100.00 | 
+ packages\core\src\storage-adapter.test.ts        |   52.94 |   85.19 | 39,42,45,51,57,60,63
+ packages\core\src\storage-adapter.ts             |  100.00 |  100.00 | 
+ packages\core\src\story-dependencies.test.ts     |  100.00 |  100.00 | 
+ packages\core\src\story-dependencies.ts          |   81.25 |   91.47 | 27,34-36,38-40,52-53,127-128
+ packages\core\src\story-metrics.test.ts          |  100.00 |  100.00 | 
+ packages\core\src\story-state-machine.test.ts    |  100.00 |  100.00 | 
+ packages\core\src\story-state-machine.ts         |   83.33 |  100.00 | 
+ packages\core\src\task-decomposition.test.ts     |  100.00 |  100.00 | 
+ packages\core\src\task-decomposition.ts          |   85.92 |   93.75 | 173-177,211-235
+ packages\core\src\telemetry-retention.test.ts    |  100.00 |  100.00 | 
+ packages\core\src\telemetry-retention.ts         |  100.00 |  100.00 | 
+ packages\core\src\types.test.ts                  |  100.00 |  100.00 | 
+ packages\core\src\types.ts                       |  100.00 |  100.00 | 
+ packages\core\src\workspace.test.ts              |  100.00 |  100.00 | 
+ packages\core\src\workspace.ts                   |  100.00 |  100.00 | 
+--------------------------------------------------|---------|---------|-------------------
+
+ 427 pass
+ 0 fail
+ 832 expect() calls
+Ran 427 tests across 26 files. [620.00ms]
+EXIT_CODE=0

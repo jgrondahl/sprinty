@@ -1,0 +1,16 @@
+Task 2: CORS Hardening
+
+Files:
+- packages/api/src/middleware/cors.ts
+- packages/api/src/middleware/cors.test.ts
+- .env.example
+
+Verification:
+- bun test packages/api/src/middleware/cors.test.ts
+  -> 4 pass, 0 fail
+- grep -n "origins" packages/api/src/middleware/cors.ts
+  -> origins parsed from CORS_ORIGINS env
+- grep -R -n "origins:\s*\['\*'\]" packages/api/src --include='*.ts'
+  -> no matches
+
+Result: PASS

@@ -1,0 +1,17 @@
+Task 3: Rate Limiter Middleware
+
+Files:
+- packages/api/src/middleware/rate-limiter.ts
+- packages/api/src/middleware/rate-limiter.test.ts
+- packages/api/src/server.ts
+
+Verification:
+- bun test packages/api/src/middleware/rate-limiter.test.ts
+  -> 4 pass, 0 fail
+- Behavior verified by tests:
+  - auth routes enforce lower limit
+  - general routes enforce general limit
+  - 429 includes Retry-After header
+  - valid JWT bearer identity is used for user-scoped buckets
+
+Result: PASS

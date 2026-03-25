@@ -1,0 +1,10 @@
+16:  acceptanceCriteria: jsonb('acceptance_criteria').$type<string[]>().notNull().default([]),
+19:  sourceId: text('source_id'),
+20:  storyPoints: integer('story_points'),
+23:  dependsOn: jsonb('depends_on').$type<string[]>().notNull().default([]),
+24:  workspacePath: text('workspace_path').notNull(),
+28:  epicId: uuid('epic_id').references(() => epics.id, { onDelete: 'set null' }),
+29:  orgId: uuid('org_id')
+32:  projectId: uuid('project_id')
+35:  assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+36:  sprintId: uuid('sprint_id').references(() => sprints.id, { onDelete: 'set null' }),

@@ -1,0 +1,19 @@
+bun test v1.3.10 (30e609e0)
+
+packages\core\src\storage-adapter.test.ts:
+(pass) storage-adapter schemas > parses mkdir options
+(pass) storage-adapter schemas > parses rm options
+(pass) storage-adapter schemas > parses stat payload
+(pass) StorageAdapter contract > accepts a complete adapter implementation
+-------------------------------------------|---------|---------|-------------------
+File                                       | % Funcs | % Lines | Uncovered Line #s
+-------------------------------------------|---------|---------|-------------------
+All files                                  |   83.33 |   85.85 |
+ packages\core\src\storage-adapter.test.ts |   66.67 |   71.70 | 37-39,43-45,49-57
+ packages\core\src\storage-adapter.ts      |  100.00 |  100.00 | 
+-------------------------------------------|---------|---------|-------------------
+
+ 4 pass
+ 0 fail
+ 10 expect() calls
+Ran 4 tests across 1 file. [33.00ms]

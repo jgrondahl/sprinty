@@ -1,0 +1,27 @@
+Wave 1 Verification Summary
+
+Commands run:
+- bun run build
+  -> PASS (all workspace packages built, including @splinty/api)
+- npx tsc --noEmit
+  -> PASS
+- bun test packages/api/src/middleware/cors.test.ts
+  -> 4 pass, 0 fail
+- bun test packages/api/src/middleware/rate-limiter.test.ts
+  -> 4 pass, 0 fail
+- bun test packages/api/src/middleware/security-headers.test.ts
+  -> 1 pass, 0 fail
+- bun test packages/db/src/schema/artifact-versions.test.ts
+  -> 8 pass, 0 fail
+- bun test packages/db/src/schema/promotion.test.ts
+  -> 4 pass, 0 fail
+- bun test packages/core/src/services/agent-capabilities.test.ts
+  -> 5 pass, 0 fail
+
+Full test suite:
+- bun test
+  -> pre-existing failures remain in TaskDecomposer suite (11 fails, unchanged by Wave 1 scope)
+
+Static checks:
+- packages/api/src contains zero console.log/info/warn/error matches
+- CORS wildcard origins removed from API middleware

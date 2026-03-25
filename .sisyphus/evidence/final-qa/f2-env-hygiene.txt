@@ -1,0 +1,11 @@
+Environment template hygiene validation:
+- Removed personal email from JIRA_EMAIL and replaced with developer@example.com.
+- Removed full Jira API token-like value from JIRA_API_TOKEN and replaced with placeholder.
+- Replaced ANTHROPIC_API_KEY prefix placeholder with neutral placeholder text.
+- Replaced GITHUB_TOKEN prefix placeholder with neutral placeholder text.
+
+Leak check command:
+grep -nE "sk-ant-|ghp_|ATATT3|jgrondahldev@gmail.com" .env.example
+
+Result: no matches
+EXIT_CODE=0

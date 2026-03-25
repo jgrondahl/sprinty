@@ -1,0 +1,14 @@
+Task 4: Security Headers Middleware
+
+Files:
+- packages/api/src/middleware/security-headers.ts
+- packages/api/src/middleware/security-headers.test.ts
+- packages/api/src/server.ts
+
+Verification:
+- bun test packages/api/src/middleware/security-headers.test.ts
+  -> 1 pass, 0 fail
+- grep -n "Strict-Transport-Security\|X-Content-Type-Options\|X-Frame-Options\|X-XSS-Protection\|Content-Security-Policy\|Referrer-Policy" packages/api/src/middleware/security-headers.ts
+  -> all 6 required headers present
+
+Result: PASS

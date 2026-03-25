@@ -1,0 +1,216 @@
+
+===== F1 AUDIT RUN 2026-03-14T09:03:58-06:00 =====
+
+## git diff --stat
+ README.md                                   |   8 ++
+ packages/agents/src/architect.ts            |  15 ++--
+ packages/agents/src/architecture-planner.ts |  24 +++++-
+ packages/agents/src/base-agent.ts           |   5 +-
+ packages/agents/src/developer.ts            |   8 +-
+ packages/agents/src/index.ts                |   2 +-
+ packages/agents/src/orchestrator.test.ts    |  83 +++++++++++++++++++
+ packages/agents/src/orchestrator.ts         | 124 +++++++++++++++++++++++-----
+ packages/agents/src/qa-engineer.ts          |  11 +--
+ packages/cli/src/index.ts                   |  35 ++++++++
+ packages/core/src/project-context.ts        |  13 ++-
+ packages/core/src/project-memory.ts         |   7 +-
+ packages/core/src/types.test.ts             |  49 +++++++++++
+ packages/core/src/types.ts                  |   7 ++
+ 14 files changed, 348 insertions(+), 43 deletions(-)
+
+## git status --porcelain
+ M README.md
+ M packages/agents/src/architect.ts
+ M packages/agents/src/architecture-planner.ts
+ M packages/agents/src/base-agent.ts
+ M packages/agents/src/developer.ts
+ M packages/agents/src/index.ts
+ M packages/agents/src/orchestrator.test.ts
+ M packages/agents/src/orchestrator.ts
+ M packages/agents/src/qa-engineer.ts
+ M packages/cli/src/index.ts
+ M packages/core/src/project-context.ts
+ M packages/core/src/project-memory.ts
+ M packages/core/src/types.test.ts
+ M packages/core/src/types.ts
+?? .sisyphus/
+?? docs/AGENTS.md
+?? docs/AI-Coaching-App.yaml
+?? docs/backlog.yaml
+?? packages.zip
+
+## git diff (guardrail files)
+
+### packages/cli/src/index.ts
+diff --git a/packages/cli/src/index.ts b/packages/cli/src/index.ts
+index 88dbc65..8ec9a81 100644
+--- a/packages/cli/src/index.ts
++++ b/packages/cli/src/index.ts
+@@ -128,6 +128,37 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
+     return 2;
+   }
+ 
++  // ── Resolve project spec (docs/AGENTS.md hard constraints) ────────────────
++  // Explicit --spec flag takes precedence; otherwise auto-discover docs/AGENTS.md
++  // relative to the input file's directory (for file source) or CWD.
++  let projectSpec: string | undefined;
++  const specFlagPath = flags['spec'];
++  if (specFlagPath) {
++    const specAbsPath = path.resolve(specFlagPath);
++    if (fs.existsSync(specAbsPath)) {
++      projectSpec = fs.readFileSync(specAbsPath, 'utf-8');
++      console.log(`Using project spec: ${specAbsPath}`);
++    } else {
++      console.error(red(`Error: spec file not found: ${specAbsPath}`));
++      return 2;
++    }
++  } else {
++    // Auto-discover: look for docs/AGENTS.md relative to input file dir or CWD
++    const searchBase = source === 'file' ? path.dirname(path.resolve(input)) : process.cwd();
++    const candidates = [
++      path.join(searchBase, 'docs', 'AGENTS.md'),
++      path.join(searchBase, '..', 'docs', 'AGENTS.md'),
++      path.join(process.cwd(), 'docs', 'AGENTS.md'),
++    ];
++    for (const candidate of candidates) {
++      if (fs.existsSync(candidate)) {
++        projectSpec = fs.readFileSync(candidate, 'utf-8');
++        console.log(`Auto-detected project spec: ${candidate}`);
++        break;
++      }
++    }
++  }
++
+   // ── Load stories ───────────────────────────────────────────────────────────
+   let stories;
+   try {
+@@ -197,6 +228,7 @@ export async function cmdRun(flags: Record<string, string>): Promise<number> {
+     ...(useCopilot
+       ? { defaultClient: copilotClient, defaultModel: 'gpt-4o', lightModel: 'gpt-4o-mini' }
+       : {}),
++    ...(projectSpec ? { projectSpec } : {}),
+   });
+ 
+   let results;
+@@ -386,6 +418,8 @@ RUN
+     --source github   Load stories from GitHub Issues
+     --input <value>   File path, Jira board ID, or GitHub owner/repo
+     --project <id>    Project ID to use (default: "default")
++    --spec <path>     Path to project spec file (AGENTS.md) with tech stack constraints.
++                      Auto-discovered at docs/AGENTS.md if not specified.
+ 
+   Required env vars (set before running):
+     ANTHROPIC_API_KEY        Claude API key
+@@ -411,6 +445,7 @@ EXPORT
+ EXAMPLES
+   splinty init --name my-app
+   splinty run --source file --input stories/sprint1.md --project my-app
++  splinty run --source file --input stories/sprint1.md --project my-app --spec docs/AGENTS.md
+   splinty run --source github --input owner/my-repo --project my-app
+   splinty status --project my-app
+   splinty export --format=json --sprint=sprint-1736362052203 --project my-app
+
+### packages/agents/src/base-agent.ts
+diff --git a/packages/agents/src/base-agent.ts b/packages/agents/src/base-agent.ts
+index 3f5a555..3c59189 100644
+--- a/packages/agents/src/base-agent.ts
++++ b/packages/agents/src/base-agent.ts
+@@ -32,6 +32,7 @@ export class AgentCallError extends Error {
+ export interface LlmCallOptions {
+   systemPrompt: string;
+   userMessage: string;
++  maxTokens?: number;
+ }
+ 
+ /** @deprecated Use LlmCallOptions. Kept as alias for backwards compatibility. */
+@@ -74,7 +75,7 @@ export abstract class BaseAgent {
+    * Throws AgentCallError on all attempts failing.
+    */
+   protected async callLlm(options: LlmCallOptions): Promise<string> {
+-    const { systemPrompt, userMessage } = options;
++    const { systemPrompt, userMessage, maxTokens = 4096 } = options;
+     const maxAttempts = this.config.maxRetries;
+     let lastError: unknown;
+ 
+@@ -86,7 +87,7 @@ export abstract class BaseAgent {
+           model: this.config.model,
+           systemPrompt,
+           userMessage,
+-          maxTokens: 4096,
++          maxTokens,
+           temperature: this.config.temperature,
+         });
+ 
+
+## grep forbidden patterns
+
+### @ts-ignore (packages/)
+packages/agents/src/architect.test.ts:202:    // @ts-ignore
+packages/agents/src/architect.test.ts:212:    // @ts-ignore
+packages/agents/src/architect.test.ts:225:    // @ts-ignore
+packages/agents/src/architecture-planner.test.ts:559:    // @ts-ignore - patching public method for test assertion
+packages/agents/src/architecture-planner.test.ts:791:    // @ts-ignore
+packages/agents/src/base-agent.test.ts:123:    // @ts-ignore - accessing private for test
+packages/agents/src/base-agent.test.ts:138:    // @ts-ignore
+packages/agents/src/base-agent.test.ts:148:    // @ts-ignore
+packages/agents/src/base-agent.test.ts:165:    // @ts-ignore
+packages/agents/src/business-owner.test.ts:114:    // @ts-ignore
+packages/agents/src/developer.test.ts:370:    // @ts-ignore
+packages/agents/src/developer.test.ts:383:    // @ts-ignore
+packages/agents/src/developer.test.ts:1046:    // @ts-ignore
+packages/agents/src/product-owner.test.ts:182:    // @ts-ignore
+packages/agents/src/providers/anthropic-client.test.ts:51:    // @ts-ignore — mock satisfies the subset we use
+packages/agents/src/providers/anthropic-client.test.ts:68:    // @ts-ignore
+packages/agents/src/providers/anthropic-client.test.ts:98:    // @ts-ignore
+packages/agents/src/providers/anthropic-client.test.ts:107:    // @ts-ignore
+packages/agents/src/providers/anthropic-client.test.ts:114:    // @ts-ignore
+packages/agents/src/qa-engineer.test.ts:303:    // @ts-ignore
+packages/agents/src/qa-engineer.test.ts:315:    // @ts-ignore
+packages/agents/src/sound-engineer.test.ts:243:    // @ts-ignore
+packages/agents/src/sound-engineer.test.ts:253:    // @ts-ignore
+packages/agents/src/technical-writer.test.ts:177:    // @ts-ignore
+packages/agents/src/technical-writer.test.ts:187:    // @ts-ignore
+
+### any (changed files only)
+packages/agents/src/orchestrator.test.ts:417:    // Both share the same client but the throw is deterministic: any message mentioning
+packages/cli/src/index.ts:13: *   1  any story BLOCKED
+
+### console.log (packages/**/src, excluding tests)
+packages/agents/src/providers/github-copilot-client.ts:121:  console.log('\nTo connect Splinty to GitHub Copilot:');
+packages/agents/src/providers/github-copilot-client.ts:122:  console.log(`  1. Open: ${deviceData.verification_uri}`);
+packages/agents/src/providers/github-copilot-client.ts:123:  console.log(`  2. Enter code: ${deviceData.user_code}`);
+packages/agents/src/providers/github-copilot-client.ts:124:  console.log('\nWaiting for authorization...');
+packages/agents/src/providers/github-copilot-client.ts:153:      console.log('GitHub Copilot authorization successful.');
+packages/agents/src/providers/github-copilot-client.ts:263:      console.log('Already authenticated with GitHub Copilot.');
+packages/agents/src/providers/github-copilot-client.ts:282:    console.log('GitHub Copilot token removed.');
+packages/cli/src/index.ts:104:  console.log(green(`✓ Workspace initialized`));
+packages/cli/src/index.ts:105:  console.log(`  Project : ${name}`);
+packages/cli/src/index.ts:106:  console.log(`  Ledger  : ${agentsMd}`);
+packages/cli/src/index.ts:107:  console.log(`\nNext steps:`);
+packages/cli/src/index.ts:108:  console.log(`  Set required env vars:`);
+packages/cli/src/index.ts:109:  console.log(`    ANTHROPIC_API_KEY  — Claude API key`);
+packages/cli/src/index.ts:110:  console.log(`    JIRA_BASE_URL      — Jira instance URL (if using Jira source)`);
+packages/cli/src/index.ts:111:  console.log(`    JIRA_EMAIL         — Jira account email`);
+packages/cli/src/index.ts:112:  console.log(`    JIRA_API_TOKEN     — Jira API token`);
+packages/cli/src/index.ts:113:  console.log(`    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)`);
+packages/cli/src/index.ts:140:      console.log(`Using project spec: ${specAbsPath}`);
+packages/cli/src/index.ts:156:        console.log(`Auto-detected project spec: ${candidate}`);
+packages/cli/src/index.ts:205:  console.log(`Running pipeline for ${stories.length} story/stories...`);
+packages/cli/src/index.ts:220:    console.log('Using GitHub Copilot as LLM provider (gpt-4o)');
+packages/cli/src/index.ts:246:      console.log(red(`  ✗ ${result.storyId}  BLOCKED`));
+packages/cli/src/index.ts:250:      console.log(green(`  ✓ ${result.storyId}  branch: ${result.gitBranch}${prLine}`));
+packages/cli/src/index.ts:275:    console.log(yellow('No stories found in sprint ledger.'));
+packages/cli/src/index.ts:279:  console.log(`\nSprint board — project: ${project}\n`);
+packages/cli/src/index.ts:288:  console.log(header);
+packages/cli/src/index.ts:289:  console.log(divider);
+packages/cli/src/index.ts:296:    console.log(`${idCol}  ${titleCol}  ${stateCol.padEnd(COL_STATE + 10)}  ${dateCol}`);
+packages/cli/src/index.ts:299:  console.log();
+packages/cli/src/index.ts:382:  console.log(`
+
+### TODO|FIXME|HACK (changed files)
+
+## bun test (packages/agents)
+bun test v1.3.10 (30e609e0)
+
+## bun test (packages/core)
+bun test v1.3.10 (30e609e0)

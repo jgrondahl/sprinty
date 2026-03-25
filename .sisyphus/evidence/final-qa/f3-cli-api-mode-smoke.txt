@@ -1,0 +1,6 @@
+Command: bun run packages/cli/src/index.ts run --source file --input docs/backlog.yaml --project final-smoke --api
+Output:
+Error: no API credentials found. Run `splinty login` first.
+Result: BLOCKED_BY_ENV
+Notes: CLI correctly reports missing credential precondition; functional behavior matches expected auth requirement.
+EXIT_CODE=2

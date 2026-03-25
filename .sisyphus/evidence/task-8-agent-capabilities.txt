@@ -1,0 +1,18 @@
+Task 8: Agent Capability Profiles — Types & Config
+
+Files:
+- packages/core/src/services/agent-capabilities.ts
+- packages/core/src/services/agent-capabilities.test.ts
+- packages/core/src/index.ts
+
+Verification:
+- bun test packages/core/src/services/agent-capabilities.test.ts
+  -> 5 pass, 0 fail
+- bun -e "import { DEFAULT_CAPABILITY_PROFILES } from './packages/core/src/services/agent-capabilities'; import { AgentPersona } from './packages/core/src/types'; const personas = Object.values(AgentPersona); const covered = Object.keys(DEFAULT_CAPABILITY_PROFILES); console.log(personas.every((p)=>covered.includes(p)) ? 'ALL_COVERED' : 'MISSING')"
+  -> ALL_COVERED
+- bun -e "import { AgentCapabilityProfileSchema } from './packages/core/src/services/agent-capabilities'; try { AgentCapabilityProfileSchema.parse({ persona: 'INVALID' }); console.log('FAIL') } catch { console.log('VALIDATED') }"
+  -> VALIDATED
+- npx tsc --noEmit
+  -> pass
+
+Result: PASS

@@ -1,0 +1,17 @@
+=== Forbidden Pattern Scan (Wave 1 Task 1) ===
+TIMESTAMP=2026-03-15T03:23:38Z
+
+[as any]
+0 matches
+
+[@ts-ignore]
+0 matches
+
+[empty catch blocks]
+0 matches
+
+[console.log in jira.ts + orchestrator.ts]
+0 matches
+
+[jira exports smoke]
+All exports OK function function function function function

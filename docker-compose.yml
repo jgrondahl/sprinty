@@ -1,0 +1,63 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: splinty
+      POSTGRES_PASSWORD: splinty_dev
+      POSTGRES_DB: splinty
+    ports:
+      - '5432:5432'
+    volumes:
+      - splinty-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U splinty -d splinty']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://splinty:splinty_dev@postgres:5432/splinty
+      JWT_SECRET: dev-secret-change-in-prod
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./packages:/app/packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./packages/web/src:/app/packages/web/src
+    depends_on:
+      - api
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: bun run --cwd packages/db drizzle-kit push
+    environment:
+      DATABASE_URL: postgres://splinty:splinty_dev@postgres:5432/splinty
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - setup
+
+volumes:
+  splinty-pgdata:

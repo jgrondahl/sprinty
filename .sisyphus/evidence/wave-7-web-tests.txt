@@ -1,0 +1,4 @@
+Command: bun test packages/web
+Result: PASS
+Summary: 1 pass, 0 fail
+EXIT_CODE=0

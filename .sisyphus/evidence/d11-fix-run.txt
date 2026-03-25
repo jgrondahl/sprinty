@@ -1,0 +1,68 @@
+# D11 Test Pollution Fix - Evidence
+
+## Issue
+TaskDecomposer tests (11 tests) were failing when run in full test suite (849 tests) but passing in isolation (27 tests).
+
+## Root Cause Analysis
+Two separate test pollution issues were identified:
+
+### Issue 1: Fixture Mutation in Task-Decomposition Tests
+**Symptom**: Tests expecting different task counts received wrong values (e.g., "Expected length: 3, Received length: 1")
+
+**Root Cause**: 
+- `planFixture()` was not wrapping results with `deepClone()`
+- `makePlan()` was returning object literals without outer `deepClone` wrapper
+- This meant each test call received fresh objects, but nested arrays were shared references
+- When orchestrator tests ran before task-decomposition tests, they contaminated the module
+
+**Fix**:
+1. Wrapped `makePlan()` entire object literal in `deepClone()` 
+2. Updated `planFixture()` to wrap `makePlan()` result with `deepClone()`
+3. Updated `minimalSprintFixture()` to wrap result with `deepClone()`
+
+**Files Modified**:
+- packages/core/src/task-decomposition.test.ts
+
+### Issue 2: Mock Not Restored in Orchestrator Tests
+**Symptom**: `TaskDecomposer.prototype.decompose` was mocked in "writeBackStory hook" describe block but never restored
+
+**Root Cause**:
+- The "writeBackStory hook" describe block (line 1660) had no `afterEach` hook
+- When tests mocked `decompose` at line 1736, the mock persisted to subsequent test files
+- Task-decomposition tests ran AFTER orchestrator tests, inherited the mocked decompose method
+
+**Fix**:
+Added `afterEach` hook to "writeBackStory hook" describe block to restore original `TaskDecomposer.prototype.decompose`
+
+Also wrapped all fixture factory return values in `structuredClone()` for defense-in-depth isolation
+
+**Files Modified**:
+- packages/agents/src/orchestrator.test.ts
+
+## Verification Results
+
+### Before Fix
+```
+Full suite:   838 pass, 11 fail
+Core alone:   427 pass, 0 fail  
+Agents alone: 210 pass, 0 fail
+Task-decomp alone: 27 pass, 0 fail
+```
+
+### After Fix
+```
+Full suite:   849 pass, 0 fail ✅
+Task-decomp alone: 27 pass, 0 fail ✅
+Architect + Task-decomp: 40 pass, 0 fail ✅
+```
+
+## Changes Committed
+- Commit: 5f448ae "fix(tests): resolve D11 test pollution by preventing fixture mutation and restoring mocks"
+- 369 insertions, 231 deletions across 2 test files
+- All tests now pass in full suite execution
+
+## Test Assertions Preserved
+- No test assertions were modified
+- No new test assertions were added
+- Only fixture factories and mock cleanup were changed
+- Test semantics remain unchanged

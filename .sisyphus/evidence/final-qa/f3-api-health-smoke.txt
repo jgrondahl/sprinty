@@ -1,0 +1,6 @@
+Command: transient API startup + GET /api/health on localhost:3101
+Output:
+GET /api/health 200 1ms
+{"status":"ok","version":"0.1.0","uptime":0.1541235}
+Result: PASS
+EXIT_CODE=0

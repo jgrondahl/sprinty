@@ -1,0 +1,4 @@
+Command: bun run build
+Result: PASS
+Summary: all workspace package builds exited with code 0
+EXIT_CODE=0

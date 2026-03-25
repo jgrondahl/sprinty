@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+coverage
+**/coverage
+dist
+**/dist
+.git
+.sisyphus
+*.log
+.env
+.env.*
+*.pem
+*.key
+*.cert

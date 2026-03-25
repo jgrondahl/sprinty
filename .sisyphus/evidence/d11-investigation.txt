@@ -1,0 +1,258 @@
+bun test v1.3.10 (30e609e0)
+[32m✓ Workspace initialized[0m
+  Project : test-project
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-xNOpfU\test-project\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : my-project
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-5mhAOd\my-project\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : idempotent-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-nsidyW\idempotent-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : idempotent-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-nsidyW\idempotent-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : empty-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-sKvbMM\empty-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+[32m✓ Workspace initialized[0m
+  Project : status-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-ultJ1a\status-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : default
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-IGG5e4\default\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+[32m✓ Workspace initialized[0m
+  Project : env-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-cOvQOn\custom\env-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[33mNo stories found in sprint ledger.[0m
+
+Splinty — AI-powered SCRUM sprint pipeline
+
+USAGE
+  splinty <command> [options]
+
+COMMANDS
+  auth    Authenticate with GitHub Copilot (device flow)
+  login   Authenticate against Splinty API and store credentials
+  projects  Project operations via Splinty API
+  export  Export sprint telemetry artifacts
+  init    Create a new project workspace
+  run     Load stories and run the full pipeline
+  status  Print the current sprint board
+  --help  Show this help
+
+AUTH
+  splinty auth [--force] [--logout]
+
+  Options:
+    --force     Re-run device flow even if already authenticated
+    --logout    Remove the cached GitHub Copilot token
+
+  Token is stored at: ~/.splinty/copilot-token.json
+  Requires a paid GitHub Copilot subscription (Pro, Pro+, Business, or Enterprise).
+
+INIT
+  splinty init --name <project-name>
+
+  Options:
+    --name <project-name>   Unique project identifier
+
+RUN
+  splinty run --source <file|jira|github> --input <path|board-id|repo>
+
+  Options:
+    --source file     Load stories from a .md/.json/.yaml file
+    --source jira     Load stories from a Jira board
+    --source github   Load stories from GitHub Issues
+    --input <value>   File path, Jira board ID, or GitHub owner/repo
+    --project <id>    Project ID to use (default: "default")
+    --api             Route run through Splinty API client mode
+    --spec <path>     Path to project spec file (AGENTS.md) with tech stack constraints.
+                      Auto-discovered at docs/AGENTS.md if not specified.
+
+  Required env vars (set before running):
+    ANTHROPIC_API_KEY        Claude API key
+    JIRA_BASE_URL            Jira instance URL  (--source jira)
+    JIRA_EMAIL               Jira account email (--source jira)
+    JIRA_API_TOKEN           Jira API token     (--source jira)
+    GITHUB_TOKEN             GitHub token       (--source github)
+
+API LOGIN
+  splinty login --email <email> --password <password> [--org <org-id>]
+
+PROJECTS
+  splinty projects --action list
+
+STATUS
+  splinty status [--project <id>]
+
+  Options:
+    --project <id>    Project ID (default: "default")
+
+EXPORT
+  splinty export --format=json --sprint=<id> [--project <id>]
+
+  Options:
+    --format json     Output format (only json currently supported)
+    --sprint <id>     Sprint ID to export (required)
+    --project <id>    Project ID (default: "default")
+
+EXAMPLES
+  splinty init --name my-app
+  splinty run --source file --input stories/sprint1.md --project my-app
+  splinty run --source file --input roadmap.json --project my-app --api
+  splinty run --source file --input stories/sprint1.md --project my-app --spec docs/AGENTS.md
+  splinty run --source github --input owner/my-repo --project my-app
+  splinty login --email user@example.com --password 'StrongPass123!'
+  splinty projects --action list
+  splinty status --project my-app
+  splinty export --format=json --sprint=sprint-1736362052203 --project my-app
+
+EXIT CODES
+  0  All stories succeeded
+  1  One or more stories BLOCKED
+  2  Fatal error (misconfiguration, missing args, unrecoverable failure)
+
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+Auto-detected project spec: C:\Users\jgron\Repos\splinty\docs\AGENTS.md
+[32m✓ Workspace initialized[0m
+  Project : color-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-RgepRb\color-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+[32m✓ Workspace initialized[0m
+  Project : yellow-proj
+  Ledger  : C:\Users\jgron\AppData\Local\Temp\splinty-cli-DZJCEQ\yellow-proj\AGENTS.md
+
+Next steps:
+  Set required env vars:
+    ANTHROPIC_API_KEY  — Claude API key
+    JIRA_BASE_URL      — Jira instance URL (if using Jira source)
+    JIRA_EMAIL         — Jira account email
+    JIRA_API_TOKEN     — Jira API token
+    GITHUB_TOKEN       — GitHub personal access token (if using GitHub source)
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: ABCD-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: XXXX-9999
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: SLOW-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: EXPD-1234
+
+Waiting for authorization...
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: DENY-1234
+
+Waiting for authorization...
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: LGNI-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+Already authenticated with GitHub Copilot.
+
+To connect Splinty to GitHub Copilot:
+  1. Open: https://github.com/login/device
+  2. Enter code: FORC-1234
+
+Waiting for authorization...
+GitHub Copilot authorization successful.
+GitHub Copilot token removed.
+GitHub Copilot token removed.

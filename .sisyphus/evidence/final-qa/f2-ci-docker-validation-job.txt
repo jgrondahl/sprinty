@@ -1,0 +1,13 @@
+CI workflow docker validation coverage:
+- Added job: docker-validate in .github/workflows/ci.yml
+- Job steps:
+  1) docker compose config --quiet
+  2) docker compose build api
+  3) docker compose build web
+
+Workflow parse command:
+bun -e "const yaml=require('js-yaml'); const fs=require('fs'); const ci=yaml.load(fs.readFileSync('.github/workflows/ci.yml','utf8')); console.log(Object.keys(ci.jobs).join(','));"
+
+Observed jobs:
+typecheck,test,build-web,build-api,docker-validate
+EXIT_CODE=0

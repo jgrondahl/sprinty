@@ -1,0 +1,12 @@
+Workflow hardening checks:
+
+1) YAML parse check:
+- CI jobs: typecheck,test,build-web,build-api
+- PR jobs: forbidden-patterns,bundle-size
+
+2) Security/reproducibility checks:
+- root permissions block present in ci.yml
+- pull_request permissions block present in pr-checks.yml
+- bun ci used in all install steps across ci.yml and pr-checks.yml
+
+EXIT_CODE=0

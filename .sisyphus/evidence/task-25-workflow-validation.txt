@@ -1,0 +1,5 @@
+Command: bun -e "const yaml=require('js-yaml'); const fs=require('fs'); const ci=yaml.load(fs.readFileSync('.github/workflows/ci.yml','utf8')); console.log('CI Jobs:', Object.keys(ci.jobs).join(', ')); const pr=yaml.load(fs.readFileSync('.github/workflows/pr-checks.yml','utf8')); console.log('PR Jobs:', Object.keys(pr.jobs).join(', '));"
+Output:
+CI Jobs: typecheck, test, build-web, build-api
+PR Jobs: forbidden-patterns, bundle-size
+EXIT_CODE=0

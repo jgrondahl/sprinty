@@ -1,0 +1,12 @@
+Task 5: Environment & Docker Ignore Hardening
+
+Files:
+- .env.example
+- .dockerignore
+
+Verification:
+- grep -c "DATABASE_URL\|JWT_SECRET\|JWT_EXPIRES_IN\|PORT\|LOG_LEVEL\|CORS_ORIGINS\|RATE_LIMIT_AUTH\|RATE_LIMIT_GENERAL\|NODE_ENV" .env.example
+  -> 9
+- .dockerignore now includes: .env, .env.*, *.pem, *.key, *.cert, .git, node_modules, .sisyphus, *.log, coverage
+
+Result: PASS

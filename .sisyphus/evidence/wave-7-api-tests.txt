@@ -1,0 +1,4 @@
+Command: bun test packages/api
+Result: PASS
+Summary: 31 pass, 0 fail, 58 expect() calls
+EXIT_CODE=0

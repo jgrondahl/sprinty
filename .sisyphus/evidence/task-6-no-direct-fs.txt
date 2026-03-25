@@ -1,0 +1,2 @@
+no fs imports in refactored files
+no direct fs.* calls in refactored files

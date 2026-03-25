@@ -1,0 +1,20 @@
+Task 1: Pino Logger Setup
+
+Files:
+- packages/api/src/lib/logger.ts
+- packages/api/src/server.ts
+- packages/api/src/index.ts
+- packages/api/package.json
+- .env.example
+
+Verification:
+- grep -n "\"pino\"" packages/api/package.json
+  -> 17:    "pino": "^9.7.0",
+- grep -n "LOG_LEVEL=" .env.example
+  -> 14:LOG_LEVEL=info
+- grep -R -n "console\.\(log\|info\|warn\|error\)" packages/api/src --include='*.ts'
+  -> no matches
+- bun run build
+  -> @splinty/api build exited code 0
+
+Result: PASS

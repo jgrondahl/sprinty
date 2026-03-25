@@ -1,0 +1,16 @@
+Task 7: Promotion Stage Enum & Gate Definitions Schema
+
+Files:
+- packages/db/src/schema/promotion.ts
+- packages/db/src/schema/index.ts
+- packages/db/src/schema/promotion.test.ts
+
+Verification:
+- bun test packages/db/src/schema/promotion.test.ts
+  -> 4 pass, 0 fail
+- bun -e "import { gateDefinitions, stageTransitions, promotionStageEnum } from './packages/db/src/schema/index'; console.log(gateDefinitions && stageTransitions && promotionStageEnum ? 'OK' : 'FAIL')"
+  -> OK
+- npx tsc --noEmit
+  -> pass
+
+Result: PASS

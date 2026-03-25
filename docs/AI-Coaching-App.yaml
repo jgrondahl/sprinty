@@ -1,0 +1,590 @@
+system:
+  name: ai-deep-house-coach
+  description: >
+    AI-powered deep house production coaching platform that analyzes uploaded
+    tracks, compares them against curated references, generates actionable
+    coaching reports, tracks progress over time, and incrementally improves
+    recommendation quality using observed improvement data.
+
+# =========================================================
+# ARCHITECTURE SEED PLAN
+# =========================================================
+
+architecture:
+
+  topology:
+    services:
+
+      - name: frontend
+        type: web-app
+        runtime: node
+        responsibilities:
+          - authentication UI
+          - project dashboard
+          - upload interface
+          - reference selection
+          - coaching reports
+          - progress charts
+          - goal tracking UI
+        communicatesWith:
+          - api
+
+      - name: api
+        type: http-service
+        runtime: python
+        responsibilities:
+          - authentication
+          - project management
+          - upload orchestration
+          - reference library queries
+          - report retrieval
+          - feedback ingestion
+        communicatesWith:
+          - database
+          - object-storage
+          - job-queue
+
+      - name: audio-worker
+        type: background-worker
+        runtime: python
+        responsibilities:
+          - queue consumption
+          - audio normalization
+          - DSP feature extraction
+          - similarity comparison
+          - scoring
+          - coaching generation
+
+      - name: learning-worker
+        type: background-worker
+        runtime: python
+        responsibilities:
+          - improvement pattern analysis
+          - recommendation training
+          - model publishing
+
+  infrastructure:
+
+    database:
+      type: postgres
+
+    objectStorage:
+      type: s3-compatible
+
+    jobQueue:
+      type: redis
+
+# =========================================================
+# IMPLEMENTATION DIRECTIVES
+# =========================================================
+
+implementationDirectives:
+
+  purpose: >
+    Reduce ambiguity for AI-driven development by constraining frameworks,
+    enforcing deterministic architecture, and defining internal contracts.
+
+  runtimeIsolation:
+    frontendRuntime: node
+    apiRuntime: python
+    workerRuntime: python
+
+  buildStrategy:
+    nodeEnvironment: pnpm
+    pythonEnvironment: poetry
+
+  technologyStack:
+
+    frontend:
+      framework: vue
+      language: typescript
+      buildTool: vite
+      uiFramework: tailwindcss
+      chartLibrary: chartjs
+
+    api:
+      framework: fastapi
+      language: python
+      orm: sqlalchemy
+      validation: pydantic
+      auth: jwt
+
+    audioWorker:
+      language: python
+      dspLibraries:
+        - librosa
+        - numpy
+        - scipy
+
+    learningWorker:
+      language: python
+      mlLibraries:
+        - scikit-learn
+        - pandas
+
+    database:
+      migrationTool: alembic
+
+    queue:
+      workerLibrary: rq
+
+  internalContracts:
+
+    analysisJobPayload:
+      fields:
+        - job_id
+        - project_id
+        - upload_id
+        - track_version_id
+        - pipeline_version
+        - reference_ids
+        - correlation_id
+
+    stageExecutionResult:
+      fields:
+        - stage_name
+        - session_id
+        - status
+        - artifact_keys
+        - metrics
+        - correlation_id
+
+  featureVectorFormat:
+    columnType: jsonb
+    compression:
+      enabled: true
+      method: gzip
+    schema:
+      fields:
+        - track_id
+        - feature_type
+        - feature_version
+        - vector
+        - segment_start
+        - segment_end
+
+  segmentationSpecification:
+    possibleSections:
+      - intro
+      - build
+      - breakdown
+      - drop
+      - outro
+
+  referenceDatasetGovernance:
+    freeze_reference_features_per_pipeline_version: true
+    reprocess_on_feature_version_change: true
+
+  pipelineExecutionRules:
+    idempotentStages: true
+    retrySafe: true
+    stageIsolation: true
+    deterministicOrdering: true
+
+  securityRules:
+    enforceProjectOwnership: true
+    signedUploadUrls: true
+    restrictReportAccessToOwner: true
+
+  rateLimits:
+    uploadPerUserPerHour: 20
+    analysisJobsPerUserPerHour: 50
+
+  failureHandling:
+    retryAttempts: 3
+    stageTimeoutSeconds: 600
+    deadLetterQueue: true
+
+  observability:
+
+    logging:
+      structuredLogging: true
+      correlationIdRequired: true
+
+    metrics:
+      - analysis_stage_duration
+      - queue_latency
+      - feature_cache_hit_rate
+      - recommendation_accuracy
+
+    tracing:
+      propagateCorrelationIdAcrossServices: true
+
+# =========================================================
+# DSP PIPELINE ORCHESTRATOR
+# =========================================================
+
+pipelineOrchestrator:
+
+  location: audio-worker
+
+  implementation: stage-runner
+
+  behavior:
+    - read analysis job payload
+    - determine next stage from DAG
+    - execute stage handler
+    - persist stage result
+    - enqueue downstream stage jobs
+
+# =========================================================
+# DSP PLUGIN ARCHITECTURE
+# =========================================================
+
+dspPluginArchitecture:
+
+  goal: >
+    Allow new DSP analysis modules to be added without modifying
+    the core audio worker.
+
+  pluginInterface:
+
+    requiredMethods:
+      - name: stage_name
+      - name: dependencies
+      - name: execute
+
+    executeSignature:
+      input:
+        - normalized_audio_path
+        - session_id
+        - feature_cache
+      output:
+        - feature_vectors
+        - artifacts
+        - metrics
+
+  pluginDiscovery:
+
+    method: directory_scan
+
+    pluginDirectory: audio-worker/plugins
+
+    loadingStrategy:
+      - load python modules dynamically
+      - register stage handlers with pipeline orchestrator
+
+  pluginRegistration:
+
+    registry:
+      table: dsp_plugins
+
+    fields:
+      - plugin_name
+      - stage_name
+      - version
+      - dependencies
+
+  pluginRules:
+    - plugin stages must be deterministic
+    - plugin stages must declare dependencies
+    - plugin stages must be idempotent
+
+# =========================================================
+# ANALYSIS PIPELINE DAG
+# =========================================================
+
+analysisPipeline:
+
+  dag:
+
+    normalization:
+      input: uploaded_audio
+
+    metadata:
+      dependsOn: [normalization]
+
+    waveform:
+      dependsOn: [metadata]
+
+    bpm:
+      dependsOn: [metadata]
+
+    key:
+      dependsOn: [metadata]
+
+    mfcc:
+      dependsOn: [normalization]
+
+    spectral_contrast:
+      dependsOn: [normalization]
+
+    chroma:
+      dependsOn: [key]
+
+    harmonic_percussive_split:
+      dependsOn: [normalization]
+
+    loudness:
+      dependsOn: [normalization]
+
+    segmentation:
+      dependsOn: [waveform]
+
+    timbral_similarity:
+      dependsOn: [mfcc, spectral_contrast]
+
+    rhythm_similarity:
+      dependsOn: [bpm]
+
+    arrangement_similarity:
+      dependsOn: [segmentation]
+
+    low_end_similarity:
+      dependsOn: [loudness]
+
+    drum_similarity:
+      dependsOn: [harmonic_percussive_split]
+
+    mix_quality_score:
+      dependsOn:
+        - timbral_similarity
+        - low_end_similarity
+
+    arrangement_score:
+      dependsOn:
+        - arrangement_similarity
+        - rhythm_similarity
+
+    sound_design_score:
+      dependsOn:
+        - drum_similarity
+
+    label_readiness_score:
+      dependsOn:
+        - mix_quality_score
+        - arrangement_score
+        - sound_design_score
+
+    coaching_generation:
+      dependsOn: [label_readiness_score]
+
+# =========================================================
+# COACHING LEARNING SYSTEM
+# =========================================================
+
+coachingLearningSystem:
+
+  dataSources:
+    - coaching_reports
+    - progress_history
+    - goals
+    - feedback_events
+
+  feedbackLoop:
+
+    collect:
+      - recommendation_usefulness
+      - score_delta
+      - goal_completion
+
+    analyze:
+      - identify effective coaching advice
+      - detect recurring producer weaknesses
+
+    update:
+      - recommendation weighting
+      - advice prioritization
+
+    publish:
+      - new recommendation model version
+
+  modelVersioning:
+
+    model_registry_table: recommendation_models
+
+    fields:
+      - model_version
+      - training_timestamp
+      - training_dataset_version
+      - algorithm
+      - evaluation_metrics
+
+# =========================================================
+# EXECUTION PHASES
+# =========================================================
+
+executionPhases:
+
+  - phase: architecture-foundation
+    stories:
+      - platform-repo-bootstrap
+      - platform-service-layout
+      - platform-service-boundaries
+      - platform-env-config
+      - platform-object-storage
+      - platform-analysis-versioning
+
+  - phase: infrastructure
+    stories:
+      - platform-infrastructure
+      - analysis-job-queue
+      - audio-worker-bootstrap
+      - learning-worker-bootstrap
+      - analysis-pipeline-orchestrator
+
+  - phase: identity
+    stories:
+      - platform-auth-schema
+      - platform-auth-api
+      - platform-auth-ui
+      - platform-user-profile
+
+  - phase: project-domain
+    stories:
+      - platform-project-schema
+      - platform-project-api
+      - platform-project-dashboard
+
+  - phase: uploads
+    stories:
+      - upload-track-schema
+      - upload-track-api
+      - upload-track-ui
+      - audio-normalization-pipeline
+
+  - phase: dsp-features
+    stories:
+      - audio-feature-schema
+      - audio-feature-cache
+      - audio-metadata-extraction
+      - audio-waveform-generation
+      - audio-bpm-detection
+      - audio-key-detection
+      - audio-mfcc-extraction
+      - audio-spectral-contrast
+      - audio-chroma-features
+      - audio-harmonic-percussive-split
+      - audio-loudness-analysis
+      - audio-segmentation
+
+  - phase: comparison
+    stories:
+      - compare-timbral-similarity
+      - compare-rhythm-similarity
+      - compare-arrangement-similarity
+      - compare-low-end-similarity
+      - compare-drum-similarity
+
+  - phase: scoring
+    stories:
+      - score-mix-quality-engine
+      - score-arrangement-quality-engine
+      - score-sound-design-engine
+      - score-label-readiness-engine
+
+  - phase: coaching
+    stories:
+      - coaching-report-generator
+      - coaching-feedback-collection
+      - improvement-pattern-analysis
+      - recommendation-model-training
+
+  - phase: progress
+    stories:
+      - progress-history
+      - progress-summary-engine
+      - goal-tracking
+
+  - phase: integration
+    stories:
+      - qa-integration-tests
+
+# =========================================================
+# BACKLOG
+# =========================================================
+
+backlog:
+
+  - id: platform-repo-bootstrap
+    title: Monorepo bootstrap
+    description: Create initial repository structure for frontend, API, and workers.
+    acceptanceCriteria:
+      - repository contains frontend, api, audio-worker, learning-worker
+      - workspace package configuration resolves dependencies
+      - README documents project structure
+
+  - id: platform-service-layout
+    title: Service directory layout
+    description: Define deterministic service directory layout.
+    dependsOn: [platform-repo-bootstrap]
+    acceptanceCriteria:
+      - each service has independent root directory
+      - shared contracts package exists
+      - services compile independently
+
+  - id: platform-service-boundaries
+    title: Define service boundaries
+    description: Document architecture boundaries between services.
+    dependsOn: [platform-service-layout]
+    acceptanceCriteria:
+      - service responsibilities documented
+      - cross-service imports prohibited
+      - allowed communication paths defined
+
+  - id: platform-env-config
+    title: Environment configuration
+    description: Centralized configuration validation for services.
+    dependsOn: [platform-service-boundaries]
+    acceptanceCriteria:
+      - services fail fast on missing configuration
+      - config schema validated at startup
+
+  - id: platform-object-storage
+    title: Object storage system
+    description: Durable storage for audio and artifacts.
+    dependsOn: [platform-env-config]
+    acceptanceCriteria:
+      - audio stored using immutable keys
+      - artifacts stored separately
+      - signed URLs supported
+
+  - id: analysis-job-queue
+    title: Analysis job queue
+    description: Queue for analysis and learning jobs.
+    acceptanceCriteria:
+      - queue supports retry
+      - dead-letter queue enabled
+      - jobs track lifecycle states
+
+  - id: audio-worker-bootstrap
+    title: Audio worker service
+    description: Worker consuming analysis jobs.
+    dependsOn: [analysis-job-queue]
+    acceptanceCriteria:
+      - worker consumes queue
+      - stage transitions logged
+      - graceful shutdown supported
+
+  - id: learning-worker-bootstrap
+    title: Learning worker service
+    description: Worker responsible for coaching model training.
+    dependsOn: [analysis-job-queue]
+    acceptanceCriteria:
+      - worker consumes learning jobs
+      - model version published after training
+
+  - id: analysis-pipeline-orchestrator
+    title: DSP pipeline orchestrator
+    description: Execute analysis DAG deterministically.
+    dependsOn: [audio-worker-bootstrap]
+    acceptanceCriteria:
+      - stages execute according to DAG
+      - stage results persisted
+      - downstream stages enqueued automatically
+
+  - id: audio-normalization-pipeline
+    title: Audio normalization
+    description: Convert audio into canonical analysis format.
+    acceptanceCriteria:
+      - sample rate normalized
+      - bit depth normalized
+      - normalized audio stored
+
+  - id: qa-integration-tests
+    title: Cross-service integration tests
+    description: Validate full pipeline from upload to coaching output.
+    acceptanceCriteria:
+      - upload → analysis → scoring → report flow validated
+      - services communicate correctly
+      - pipeline runs in docker environment

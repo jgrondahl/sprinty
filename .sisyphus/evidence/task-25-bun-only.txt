@@ -1,0 +1,15 @@
+Command: grep checks across workflow files for npm/yarn exclusions and Bun setup usage
+Output:
+.github/workflows/ci.yml:14:      - uses: oven-sh/setup-bun@v2
+.github/workflows/ci.yml:24:      - uses: oven-sh/setup-bun@v2
+.github/workflows/ci.yml:35:      - uses: oven-sh/setup-bun@v2
+.github/workflows/ci.yml:46:      - uses: oven-sh/setup-bun@v2
+.github/workflows/pr-checks.yml:55:      - uses: oven-sh/setup-bun@v2
+.github/workflows/ci.yml:16:        run: bun install --frozen-lockfile
+.github/workflows/ci.yml:26:        run: bun install --frozen-lockfile
+.github/workflows/ci.yml:37:        run: bun install --frozen-lockfile
+.github/workflows/ci.yml:48:        run: bun install --frozen-lockfile
+.github/workflows/pr-checks.yml:57:        run: bun install --frozen-lockfile
+.github/workflows/ci.yml:28:        run: bun test
+No npm/yarn workflow commands detected.
+EXIT_CODE=0

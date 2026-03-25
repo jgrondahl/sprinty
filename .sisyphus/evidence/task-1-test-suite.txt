@@ -1,0 +1,118 @@
+bun test v1.3.10 (30e609e0)
+
+packages\integrations\src\file.test.ts:
+(pass) FileConnector — Markdown > parses a story with title and description
+(pass) FileConnector — Markdown > parses acceptance criteria from ## heading
+(pass) FileConnector — Markdown > parses multiple story sections
+(pass) FileConnector — Markdown > throws ParseError when no story sections found [16.00ms]
+(pass) FileConnector — Markdown > assigns sourceId as 12-char hex string
+(pass) FileConnector — Markdown > parses Depends On metadata from markdown
+(pass) FileConnector — Markdown > defaults dependsOn to empty array when missing in markdown
+(pass) FileConnector — JSON > parses a valid JSON story array
+(pass) FileConnector — JSON > parses a single story object (not array)
+(pass) FileConnector — JSON > throws ParseError on malformed JSON
+(pass) FileConnector — JSON > throws ParseError when required field missing
+(pass) FileConnector — YAML > parses a valid YAML story
+(pass) FileConnector — YAML > also parses .yml extension
+(pass) FileConnector — YAML > throws ParseError on malformed YAML
+(pass) FileConnector — setSource > stamps source as FILE and generates deterministic sourceId
+(pass) FileConnector — unsupported extension > throws ParseError for .docx
+(pass) FileConnector — file not found > throws ParseError when file does not exist
+
+packages\integrations\src\github.test.ts:
+(pass) GitHubConnector — fetchIssues > returns Story[] with source GITHUB
+(pass) GitHubConnector — fetchIssues > filters by labels when provided
+(pass) GitHubConnector — fetchIssues > filters out pull requests from results
+(pass) GitHubConnector — fetchIssues > returns empty array when no issues
+(pass) GitHubConnector — parseGitHubIssue > maps issue fields to Story correctly
+(pass) GitHubConnector — parseGitHubIssue > handles null body gracefully
+(pass) GitHubConnector — parseGitHubIssue > handles string labels
+(pass) GitHubConnector — addComment > calls createComment with correct parameters
+(pass) GitHubConnector — addLabel > calls addLabels with correct parameters
+(pass) GitHubConnector — createBranch > creates branch from main by default
+(pass) GitHubConnector — createBranch > creates branch from custom base
+(pass) GitHubConnector — createPullRequest > returns PR URL
+(pass) GitHubConnector — createPullRequest > PR body contains Closes #issueNumber
+(pass) GitHubConnector — createPullRequest > PR body preserves the original body text
+
+packages\integrations\src\jira.test.ts:
+(pass) JiraConnector — fetchStories > returns Story[] with source JIRA
+(pass) JiraConnector — fetchStories > returns empty array when no issues
+(pass) JiraConnector — fetchStories > includes sprintId in JQL when provided
+(pass) JiraConnector — addComment > POSTs to correct endpoint with correct body
+(pass) JiraConnector — updateStatus > POSTs transition id to correct endpoint
+(pass) JiraConnector — getTransitions > returns transition list
+(pass) JiraConnector — error handling > throws AuthError on 401
+(pass) JiraConnector — error handling > throws NotFoundError on 404
+(pass) JiraConnector — error handling > throws generic error on 500
+(pass) JiraConnector — parseJiraIssue > extracts description from ADF content
+(pass) JiraConnector — parseJiraIssue > handles null description gracefully
+(pass) JiraConnector — parseJiraIssue > uses Basic auth header with base64 email:token
+(pass) JiraConnector — addAdfComment > POSTs ADF document to comment endpoint
+(pass) JiraConnector — createIssue > creates issue and returns key
+(pass) JiraConnector — createBugIssue > creates bug issue with issuetype Bug
+(pass) JiraConnector — getFieldMetadata > GETs createmeta for project
+(pass) JiraConnector — 429 retry > retries on 429 and succeeds on second attempt [1016.00ms]
+(pass) JiraConnector — 429 retry > respects Retry-After header (seconds) [1016.00ms]
+(pass) JiraConnector — 429 retry > throws RateLimitError after max retries [46.00ms]
+(pass) JiraConnector — 429 retry > uses exponential fallback when no Retry-After [3016.00ms]
+(pass) ADF factory functions > buildStoryDescription creates valid ADF
+(pass) ADF factory functions > buildBugDescription creates valid ADF with sections
+(pass) ADF factory functions > buildQaResultComment creates valid ADF with status
+
+packages\integrations\src\__tests__\integrations.test.ts:
+(pass) Integrations — Jira combined flow: fetch → add comment > fetches stories from a board then writes a comment back to the same issue
+(pass) Integrations — Jira combined flow: fetch → add comment > fetchStories + getTransitions for the same issue key
+(pass) Integrations — GitHub combined flow: fetch issues → create PR > fetches issues then creates a PR that closes the fetched issue
+(pass) Integrations — GitHub combined flow: fetch issues → create PR > fetches issues with label filter then adds a comment
+(pass) Integrations — Jira error scenarios > throws AuthError on 401 response
+(pass) Integrations — Jira error scenarios > throws NotFoundError on 404 response
+(pass) Integrations — Jira error scenarios > throws generic error on 500 response
+(pass) Integrations — Jira error scenarios > throws network error when fetch throws
+(pass) Integrations — GitHub error scenarios > returns empty story list when repo has no open issues
+(pass) Integrations — GitHub error scenarios > filters out pull requests automatically
+(pass) Integrations — GitHub error scenarios > propagates octokit errors on createPullRequest failure
+----------------------------------------------------------|---------|---------|-------------------
+File                                                      | % Funcs | % Lines | Uncovered Line #s
+----------------------------------------------------------|---------|---------|-------------------
+All files                                                 |   28.33 |   47.32 |
+ packages\core\src\architecture-enforcer.ts               |    0.00 |   12.35 | 91,100-108,112-126,130-150,154-159,163-180,184-231,235-251,255,258-270,277-359,363-408,412-464,468-491,495-586
+ packages\core\src\architecture-plan.ts                   |    0.00 |   64.32 | 127-152,198-200,204-209,214-218,222-239,243-255
+ packages\core\src\cli-human-gate.ts                      |    0.00 |   13.64 | 5-23
+ packages\core\src\diff.ts                                |    0.00 |    3.78 | 33-100,104-173,177-182,188-189,193-234,238-266,270-313,317-339,343-351,355-380,384-391,395-398
+ packages\core\src\handoff.ts                             |    0.00 |   12.36 | 19-38,46-55,63-75,83-94,102-124
+ packages\core\src\import-graph.ts                        |    0.00 |    9.30 | 11-36,40-65,69-104,108-119,123,127-142
+ packages\core\src\index.ts                               |  100.00 |  100.00 | 
+ packages\core\src\integration-sandbox-docker.ts          |    0.00 |   10.00 | 12,16-27,32-97,101-127,132-133
+ packages\core\src\integration-sandbox-mock.ts            |    0.00 |   14.71 | 18,22-26,30-52
+ packages\core\src\ledger.ts                              |    0.00 |   13.21 | 12,16,25-31,40-44,52-71,80-87,94-101,107-145,149-151
+ packages\core\src\llm-client.ts                          |  100.00 |  100.00 | 
+ packages\core\src\plan-revision.ts                       |    0.00 |   25.26 | 15-28,32-34,87-93,148-168,174-201,205-239,243-280,284-317,323-361
+ packages\core\src\plan-validation.ts                     |    0.00 |    7.65 | 19-21,25-31,35-86,90-159,163-180,184-192,196-216,220-225,254-259,263-272,276,279-283,287-387,393-420,426-547
+ packages\core\src\project-context.ts                     |    0.00 |   17.32 | 30-33,37-108,112-133,137-143
+ packages\core\src\project-memory.ts                      |    0.00 |   50.54 | 102-106,111-116,120-134,138-153,157-167,171-181,185-187,191-193,197-211,219-220,224-228
+ packages\core\src\resume.ts                              |    0.00 |   62.86 | 37-38,42-46,51-55
+ packages\core\src\retrieval-tracking.ts                  |    0.00 |   23.81 | 38-39,43-47,51-96,100,104-160
+ packages\core\src\sandbox-mock.ts                        |    0.00 |    8.99 | 45-103,107-112,116,120,125-131,135-141
+ packages\core\src\sandbox.ts                             |    0.00 |   38.10 | 120-121,127-132,138-142
+ packages\core\src\service-guard.ts                       |    0.00 |   25.00 | 14-15,20-21,26-32,40-58
+ packages\core\src\sprint-state.ts                        |    0.00 |   74.24 | 51-54,74-75,79-83,88-92
+ packages\core\src\story-dependencies.ts                  |    0.00 |    1.34 | 3-54,58-130,134-155
+ packages\core\src\story-state-machine.ts                 |    0.00 |   70.83 | 6-7,48,55,62,71-79
+ packages\core\src\task-decomposition.ts                  |    0.00 |   14.58 | 86-88,92-98,102-107,112-118,122-125,129-134,138-144,148-154,158-181,185-252,259,263-422,427-453,457-508,512-580,584-586
+ packages\core\src\telemetry-retention.ts                 |    0.00 |   22.22 | 21-62
+ packages\core\src\types.ts                               |  100.00 |  100.00 | 
+ packages\core\src\workspace.ts                           |    0.00 |   13.16 | 8-9,15-16,26,32,36,40,48-55,59-67,77-101,105-116,124-157,163-167,171-176,180-184,188-191,195-211,215-241,245,249,253-277,281-286,293-297
+ packages\integrations\src\__tests__\integrations.test.ts |   86.27 |   99.17 | 67-68
+ packages\integrations\src\file.test.ts                   |  100.00 |  100.00 | 
+ packages\integrations\src\file.ts                        |   92.86 |  100.00 | 
+ packages\integrations\src\github.test.ts                 |   90.00 |  100.00 | 
+ packages\integrations\src\github.ts                      |  100.00 |  100.00 | 
+ packages\integrations\src\jira.test.ts                   |   94.25 |  100.00 | 
+ packages\integrations\src\jira.ts                        |  100.00 |  100.00 | 
+----------------------------------------------------------|---------|---------|-------------------
+
+ 65 pass
+ 0 fail
+ 151 expect() calls
+Ran 65 tests across 4 files. [5.21s]

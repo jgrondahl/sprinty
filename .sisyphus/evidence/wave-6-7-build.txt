@@ -1,0 +1,41 @@
+$ bun run --filter='*' build
+@splinty/core build: Bundled 39 modules in 18ms
+@splinty/core build: 
+@splinty/core build:   index.js  0.27 MB  (entry point)
+@splinty/core build: 
+@splinty/core build: Exited with code 0
+@splinty/web build: [36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+@splinty/web build: transforming...
+@splinty/web build: [32m✓[39m 53 modules transformed.
+@splinty/web build: rendering chunks...
+@splinty/web build: computing gzip size...
+@splinty/web build: [2mdist/[22m[32mindex.html                [39m[1m[2m  0.32 kB[22m[1m[22m[2m │ gzip:  0.23 kB[22m
+@splinty/web build: [2mdist/[22m[36massets/index-4JAu5NOS.js  [39m[1m[2m243.45 kB[22m[1m[22m[2m │ gzip: 77.06 kB[22m
+@splinty/web build: [32m✓ built in 613ms[39m
+@splinty/web build: Exited with code 0
+@splinty/integrations build: Bundled 66 modules in 25ms
+@splinty/integrations build: 
+@splinty/integrations build:   index.js  0.40 MB  (entry point)
+@splinty/integrations build: 
+@splinty/integrations build: Exited with code 0
+@splinty/db build: Bundled 180 modules in 29ms
+@splinty/db build: 
+@splinty/db build:   index.js  0.41 MB  (entry point)
+@splinty/db build: 
+@splinty/db build: Exited with code 0
+@splinty/agents build: Bundled 96 modules in 25ms
+@splinty/agents build: 
+@splinty/agents build:   index.js  0.64 MB  (entry point)
+@splinty/agents build: 
+@splinty/agents build: Exited with code 0
+@splinty/api build: Bundled 316 modules in 43ms
+@splinty/api build: 
+@splinty/api build:   index.js  0.96 MB  (entry point)
+@splinty/api build: 
+@splinty/api build: Exited with code 0
+@splinty/cli build: Bundled 125 modules in 34ms
+@splinty/cli build: 
+@splinty/cli build:   index.js  0.89 MB  (entry point)
+@splinty/cli build: 
+@splinty/cli build: Exited with code 0
+EXIT_CODE=0
