@@ -35,6 +35,7 @@ function makeDoneStory(): Story {
       'Given valid credentials, When I submit, Then I receive a JWT token',
       'Given invalid credentials, When I submit, Then I see an error message',
     ],
+    dependsOn: [],
     state: StoryState.DONE,
     source: StorySource.FILE,
     workspacePath: '',

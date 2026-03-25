@@ -37,6 +37,7 @@ function makeInReviewStory(): Story {
       'Given valid credentials, When I submit, Then I receive a JWT token',
       'Given invalid credentials, When I submit, Then I see an error message',
     ],
+    dependsOn: [],
     state: StoryState.IN_REVIEW,
     source: StorySource.FILE,
     workspacePath: '',
