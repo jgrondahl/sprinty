@@ -24,3 +24,7 @@ export type { TechnicalWriterResponse } from './technical-writer';
 export { SprintOrchestrator, executeRevisionLoop, OrchestratorConfigSchema } from './orchestrator';
 export type { OrchestratorConfig } from './orchestrator';
 export { AnthropicClient, GitHubCopilotClient } from './providers';
+export { scanCodeForVulnerabilities } from './security-scanner';
+export type { SecurityReport } from './security-scanner';
+// Re-export commonly used types from @splinty/core for convenience
+export type { AppBuilderResult, HandoffDocument } from '@splinty/core';
