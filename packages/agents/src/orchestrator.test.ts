@@ -12,6 +12,8 @@ import {
   SoundEngineerAgent,
   QAEngineerAgent,
   TechnicalWriterAgent,
+  type AppBuilderResult,
+  type HandoffDocument,
 } from './index';
 import {
   AgentPersona,
