@@ -35,6 +35,7 @@ function makeStory(): Story {
     acceptanceCriteria: [
       'Given service endpoints, when tests run, then contracts are validated',
     ],
+    dependsOn: [],
     state: StoryState.IN_PROGRESS,
     source: StorySource.FILE,
     workspacePath: '',

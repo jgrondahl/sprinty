@@ -32,6 +32,7 @@ function makeStory(): Story {
     title: 'As a platform team, we need versioned database migrations',
     description: 'Generate SQL up/down migration scripts for schema evolution',
     acceptanceCriteria: ['Given migration specs, when generated, then up/down scripts are present'],
+    dependsOn: [],
     state: StoryState.IN_PROGRESS,
     source: StorySource.FILE,
     workspacePath: '',

@@ -32,6 +32,7 @@ function makeEpicStory(): Story {
     title: 'Build a music streaming feature',
     description: 'Users want to stream audio tracks',
     acceptanceCriteria: [],
+    dependsOn: [],
     state: StoryState.EPIC,
     source: StorySource.FILE,
     workspacePath: '.splinty/proj/stories/story-002',
