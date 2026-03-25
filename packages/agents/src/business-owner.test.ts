@@ -31,6 +31,7 @@ function makeRawStory(): Story {
     title: 'Build a login system',
     description: 'Users need to be able to log in securely',
     acceptanceCriteria: [],
+    dependsOn: [],
     state: StoryState.RAW,
     source: StorySource.FILE,
     workspacePath: '.splinty/proj/stories/story-001',

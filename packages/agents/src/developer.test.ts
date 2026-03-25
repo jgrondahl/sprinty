@@ -42,6 +42,7 @@ function makeInProgressStory(): Story {
     title: 'As a user, I want to log in so that I can access my account',
     description: 'Secure login with JWT tokens',
     acceptanceCriteria: ['Given valid credentials, When I submit, Then I receive a JWT token'],
+    dependsOn: [],
     state: StoryState.IN_PROGRESS,
     source: StorySource.FILE,
     workspacePath: '',

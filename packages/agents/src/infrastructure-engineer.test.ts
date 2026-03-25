@@ -32,6 +32,7 @@ function makeStory(): Story {
     title: 'As a platform team, we need repeatable build and deploy automation',
     description: 'Create infra artifacts for local/dev/prod workflows',
     acceptanceCriteria: ['Given service definitions, when infra artifacts are generated, they can run in CI'],
+    dependsOn: [],
     state: StoryState.IN_PROGRESS,
     source: StorySource.FILE,
     workspacePath: '',
