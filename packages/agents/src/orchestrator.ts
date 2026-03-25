@@ -148,6 +148,16 @@ export interface OrchestratorConfig {
     branchName: string,
     commitSha: string
   ) => Promise<string>;
+  /**
+   * Optional hook to persist story results and handoff with optional PR URL.
+   * Called after story completion before final state updates. Allows writing
+   * completed story data back to external systems (e.g., JIRA).
+   */
+  writeBackStory?: (
+    story: Story,
+    handoff: HandoffDocument,
+    prUrl?: string
+  ) => Promise<void>;
   /** Optional sandbox for compile→test loop in DeveloperAgent */
   sandbox?: SandboxEnvironment;
   /** Config for sandbox initialization (image, limits, etc.) */
@@ -1728,6 +1738,7 @@ export const OrchestratorConfigSchema = z.object({
   models: z.object({}).catchall(ModelConfigSchema).optional(),
   gitFactory: z.custom<unknown>().optional(),
   createPullRequest: z.custom<unknown>().optional(),
+  writeBackStory: z.custom<unknown>().optional(),
   sandbox: z.custom<unknown>().optional(),
   sandboxConfig: z.custom<unknown>().optional(),
   pipeline: z.custom<unknown>().optional(),

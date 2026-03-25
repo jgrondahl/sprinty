@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { SprintOrchestrator, executeRevisionLoop } from './orchestrator';
+import { SprintOrchestrator, executeRevisionLoop, OrchestratorConfig } from './orchestrator';
 import { ArchitecturePlannerAgent } from './architecture-planner';
 import { DeveloperAgent } from './developer';
 import {
@@ -1648,5 +1648,30 @@ describe('SprintOrchestrator — model config', () => {
         defaultModel: { model: 'gpt-4o', temperature: 2 },
       });
     }).toThrow();
+  });
+
+  it('accepts writeBackStory optional hook in config', () => {
+    const writeBackStory = async (story: Story, handoff: HandoffDocument, prUrl?: string) => {
+      // Noop hook for testing
+    };
+
+    const orch = new SprintOrchestrator({
+      projectId: 'test-proj',
+      writeBackStory,
+    });
+
+    expect(orch).toBeDefined();
+  });
+
+  it('compiles with OrchestratorConfig type containing writeBackStory', () => {
+    // Compile-time type check: OrchestratorConfig should accept writeBackStory field
+    const config: OrchestratorConfig = {
+      projectId: 'test-proj',
+      writeBackStory: async (story: Story, handoff: HandoffDocument, prUrl?: string) => {
+        // Type check passes if this compiles
+      },
+    };
+
+    expect(config.projectId).toBe('test-proj');
   });
 });
