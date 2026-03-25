@@ -34,6 +34,7 @@ function makeSprintReadyStory(tags: string[] = ['web', 'auth']): Story {
     acceptanceCriteria: [
       'Given valid credentials, When I submit, Then I receive a JWT token',
     ],
+    dependsOn: [],
     state: StoryState.SPRINT_READY,
     source: StorySource.FILE,
     workspacePath: '',
