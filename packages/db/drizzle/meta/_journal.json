@@ -8,6 +8,20 @@
       "when": 1773546170770,
       "tag": "0000_worried_silver_fox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774618666135,
+      "tag": "0001_short_glorian",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774619838707,
+      "tag": "0002_clear_warstar",
+      "breakpoints": true
     }
   ]
 }
