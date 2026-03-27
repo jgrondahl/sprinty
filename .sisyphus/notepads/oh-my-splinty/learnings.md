@@ -36,3 +36,4 @@ Plugin type requires async function signature - initial attempt failed because f
 **Evidence Files**:
 - .sisyphus/evidence/task-1-build-clean.txt
 - .sisyphus/evidence/task-1-plugin-export.txt
+2026-03-25: Completed Task 4 types + Zod schemas — ported StoryState (8 states), AgentPersona (8 core agents), StorySchema (removed source/sourceId), HandoffDocumentSchema, AgentConfigSchema (removed model field), PipelineStep/PipelineConfig. 38 unit tests pass; bun build EXIT 0. Evidence: .sisyphus/evidence/task-4-schema-exports.txt

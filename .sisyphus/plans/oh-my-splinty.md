@@ -417,6 +417,7 @@ Max Concurrent: 10 (Wave 3)
   - Pre-commit: none (spike, not production code)
 
 - [ ] 3. Test Fixtures — Sample Stories in YAML/JSON/MD
+ - [x] 3. Test Fixtures — Sample Stories in YAML/JSON/MD
 
   **What to do**:
   - Create `test/fixtures/` directory

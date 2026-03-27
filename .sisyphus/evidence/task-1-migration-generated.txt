@@ -1,0 +1,138 @@
+MIGRATION GENERATION EVIDENCE - TASK 1
+=====================================
+
+DATE: 2026-03-27
+MIGRATION FILE: packages/db/drizzle/0001_short_glorian.sql
+GENERATOR: bunx drizzle-kit generate (executed from packages/db/)
+
+---
+
+TABLES CREATED (7 total)
+========================
+
+1. artifact_versions
+   - Columns: 8 (id, artifact_type, artifact_id, version, snapshot_data, created_by, created_at, metadata)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 1 (created_by → users.id)
+
+2. artifact_evaluations
+   - Columns: 12 (id, artifact_type, artifact_id, artifact_version, evaluation_model, overall_score, dimension_scores, raw_llm_response, evaluated_by, evaluated_at, org_id, project_id)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 2 (org_id → organizations.id, project_id → projects.id)
+
+3. artifact_lineage
+   - Columns: 8 (id, parent_type, parent_id, child_type, child_id, relationship_type, created_at, metadata)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 0
+
+4. gate_definitions
+   - Columns: 11 (id, from_stage, to_stage, required_evidence, required_approvals, auto_pass_threshold, disqualifying_conditions, org_id, project_id, created_at, updated_at)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 2 (org_id → organizations.id, project_id → projects.id)
+
+5. stage_transitions
+   - Columns: 11 (id, artifact_type, artifact_id, from_stage, to_stage, triggered_by, approvals, evaluation_id, evidence_ids, transitioned_at, metadata)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 2 (triggered_by → users.id, evaluation_id → artifact_evaluations.id)
+
+6. story_metrics
+   - Columns: 15 (id, story_id, sprint_id, org_id, total_duration_ms, llm_calls, total_tokens_input, total_tokens_output, sandbox_runs, rework_cycles, revision_contributions, cost_estimate_usd, agent_durations_ms, trace_id, created_at)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 3 (story_id → stories.id, sprint_id → sprints.id, org_id → organizations.id)
+
+7. velocity_snapshots
+   - Columns: 10 (id, project_id, org_id, sprint_id, completed_points, planned_points, completed_stories, planned_stories, sprint_duration_ms, created_at)
+   - Primary Key: id (uuid)
+   - Foreign Keys: 3 (project_id → projects.id, org_id → organizations.id, sprint_id → sprints.id)
+
+---
+
+ENUMS CREATED (3 total)
+=======================
+
+1. artifact_type (8 values)
+   - story, epic, project, architecture_plan, requirement_set, evidence_bundle, verification_result, release_candidate
+
+2. promotion_stage (12 values)
+   - draft, planned, requirements_ready, architecture_ready, build_ready, in_execution, built, verified, release_candidate, approved_for_delivery, delivered, post_delivery_review
+
+3. relationship_type (5 values)
+   - derived_from, decomposed_from, verified_by, supersedes, implements
+
+---
+
+VERIFICATION - NO DUPLICATES OF EXISTING TABLES
+=================================================
+
+Existing tables in 0000 migration (NOT recreated):
+✓ organizations (8 columns, 9 fks) - NOT in 0001
+✓ users (8 columns, 1 fks) - NOT in 0001
+✓ projects (7 columns, 1 fks) - NOT in 0001
+✓ epics (9 columns, 2 fks) - NOT in 0001
+✓ stories (19 columns, 5 fks) - NOT in 0001
+✓ sprints (10 columns, 2 fks) - NOT in 0001
+✓ audit_log (8 columns, 2 fks) - NOT in 0001
+✓ webhooks (7 columns, 1 fks) - NOT in 0001
+✓ sprint_telemetry (13 columns, 2 fks) - NOT in 0001
+
+---
+
+TEST RESULTS
+============
+
+Command: bun test (from repo root)
+Status: ✓ PASSED
+Total Tests: 850
+Passed: 850
+Failed: 0
+Duration: 36.26 seconds
+
+Test files validated:
+- packages/agents/src/*.test.ts ✓
+- packages/cli/src/*.test.ts ✓
+- packages/core/src/*.test.ts ✓
+- packages/db/src/repositories/*.test.ts ✓
+- packages/db/src/schema/*.test.ts ✓
+- packages/integrations/src/*.test.ts ✓
+- packages/web/src/*.test.tsx ✓
+
+---
+
+MIGRATION VALIDATION
+====================
+
+Migration file size: 3,516 bytes (112 lines)
+File location: /mnt/c/Users/jgron/Repos/splinty/packages/db/drizzle/0001_short_glorian.sql
+
+SQL structure verified:
+✓ CREATE TYPE statements for all 3 enums at line 1-3
+✓ CREATE TABLE statements for all 7 tables at lines 4-98
+✓ ALTER TABLE + FOREIGN KEY constraints at lines 100-112
+✓ All statement breaks use SQL comment (-> statement-breakpoint)
+
+---
+
+COMPLETION CHECKLIST
+====================
+
+✓ Generated migration file: 0001_short_glorian.sql
+✓ All 7 required tables present in migration
+✓ All 3 required enums present in migration
+✓ No duplicate tables from existing 0000 migration
+✓ No CREATE TABLE for organizations, users, projects, epics, stories, sprints, audit_log, webhooks, sprint_telemetry
+✓ Foreign key constraints all correct
+✓ Tests passing: 850/850 (100%)
+✓ No test failures
+✓ Evidence file created successfully
+
+---
+
+NOTES
+=====
+
+- Migration was generated using drizzle-kit diff against existing 0000 migration
+- No manual SQL edits were required
+- All new tables reference existing base tables (organizations, projects, users, sprints, stories)
+- The 7 new tables fill critical governance/promotion/evaluation gaps
+- Migration is ready for database application
+
