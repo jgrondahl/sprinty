@@ -20,6 +20,8 @@ function toStoryRow(row: typeof stories.$inferSelect): Story {
     workspacePath: row.workspacePath,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    sortOrder: row.sortOrder ?? undefined,
+    readiness: row.readiness ?? undefined,
   });
 }
 
