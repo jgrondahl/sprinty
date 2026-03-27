@@ -22,6 +22,12 @@ export enum Permission {
   ORG_MANAGE = 'ORG_MANAGE',
   AUDIT_READ = 'AUDIT_READ',
   WEBHOOK_MANAGE = 'WEBHOOK_MANAGE',
+  PRODUCT_GOAL_READ = 'PRODUCT_GOAL_READ',
+  PRODUCT_GOAL_WRITE = 'PRODUCT_GOAL_WRITE',
+  DELIVERY_RECORD_READ = 'DELIVERY_RECORD_READ',
+  DELIVERY_RECORD_WRITE = 'DELIVERY_RECORD_WRITE',
+  ARTIFACT_VERSION_READ = 'ARTIFACT_VERSION_READ',
+  ARTIFACT_VERSION_WRITE = 'ARTIFACT_VERSION_WRITE',
 }
 
 const allPermissions = Object.values(Permission);
@@ -38,6 +44,12 @@ export const permissionMatrix: Record<Role, Permission[]> = {
     Permission.SPRINT_READ,
     Permission.SPRINT_WRITE,
     Permission.SPRINT_EXECUTE,
+    Permission.PRODUCT_GOAL_READ,
+    Permission.PRODUCT_GOAL_WRITE,
+    Permission.DELIVERY_RECORD_READ,
+    Permission.DELIVERY_RECORD_WRITE,
+    Permission.ARTIFACT_VERSION_READ,
+    Permission.ARTIFACT_VERSION_WRITE,
   ],
   [Role.VIEWER]: [
     Permission.PROJECT_READ,
@@ -45,6 +57,9 @@ export const permissionMatrix: Record<Role, Permission[]> = {
     Permission.STORY_READ,
     Permission.SPRINT_READ,
     Permission.AUDIT_READ,
+    Permission.PRODUCT_GOAL_READ,
+    Permission.DELIVERY_RECORD_READ,
+    Permission.ARTIFACT_VERSION_READ,
   ],
   [Role.SERVICE_ACCOUNT]: [
     Permission.PROJECT_READ,
@@ -56,6 +71,12 @@ export const permissionMatrix: Record<Role, Permission[]> = {
     Permission.SPRINT_WRITE,
     Permission.SPRINT_EXECUTE,
     Permission.WEBHOOK_MANAGE,
+    Permission.PRODUCT_GOAL_READ,
+    Permission.PRODUCT_GOAL_WRITE,
+    Permission.DELIVERY_RECORD_READ,
+    Permission.DELIVERY_RECORD_WRITE,
+    Permission.ARTIFACT_VERSION_READ,
+    Permission.ARTIFACT_VERSION_WRITE,
   ],
 };
 

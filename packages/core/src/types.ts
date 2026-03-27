@@ -59,6 +59,8 @@ export const StorySchema = z.object({
   workspacePath: z.string(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  sortOrder: z.number().int().optional(),
+  readiness: z.string().optional(),
 });
 
 export const HandoffDocumentSchema = z.object({
