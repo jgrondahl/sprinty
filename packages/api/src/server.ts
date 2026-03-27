@@ -40,6 +40,16 @@ import { getSecurityReport, triggerSecurityScan } from './routes/security';
 import { getOrgReport, getProjectReport } from './routes/reports';
 import { createWebhook, deleteWebhook, listWebhooks, updateWebhook } from './routes/webhooks';
 import { listAudit } from './routes/audit';
+import { createProductGoal, listProductGoals, updateProductGoal } from './routes/product-goals';
+import { getBacklog, refineStory } from './routes/backlog';
+import { assignStories } from './routes/sprint-planning';
+import { createIncrement } from './routes/increments';
+import { createSprintReview } from './routes/sprint-reviews';
+import { createRetrospective } from './routes/retrospectives';
+import { createDeliveryRecord, listDeliveryRecords, getDeliveryRecord } from './routes/delivery-records';
+import { attachSbom } from './routes/sbom';
+import { createAttestation } from './routes/attestations';
+import { createPostDeliveryReview } from './routes/post-delivery-reviews';
 
 export type ApiServer = ReturnType<typeof Bun.serve>;
 
@@ -290,6 +300,103 @@ function route(req: Request, context: HandlerContext): Promise<Response> | Respo
 
   if (path === '/api/audit' && req.method === 'GET') {
     return authMiddleware(req).then((auth) => listAudit(req, context.db, auth));
+  }
+
+  // --- Product Goals ---
+  const productGoalMatch = path.match(/^\/api\/projects\/([^/]+)\/product-goal$/);
+  if (productGoalMatch && req.method === 'POST') {
+    const projectId = productGoalMatch[1]!;
+    return authMiddleware(req).then((auth) => createProductGoal(req, projectId, context.db, auth));
+  }
+
+  if (productGoalMatch && req.method === 'GET') {
+    const projectId = productGoalMatch[1]!;
+    return authMiddleware(req).then((auth) => listProductGoals(req, projectId, context.db, auth));
+  }
+
+  const goalIdMatch = path.match(/^\/api\/product-goals\/([^/]+)$/);
+  if (goalIdMatch && req.method === 'PATCH') {
+    const goalId = goalIdMatch[1]!;
+    return authMiddleware(req).then((auth) => updateProductGoal(req, goalId, context.db, auth));
+  }
+
+  // --- Backlog ---
+  const backlogMatch = path.match(/^\/api\/projects\/([^/]+)\/backlog$/);
+  if (backlogMatch && req.method === 'GET') {
+    const projectId = backlogMatch[1]!;
+    return authMiddleware(req).then((auth) => getBacklog(req, projectId, context.db, auth));
+  }
+
+  const backlogRefineMatch = path.match(/^\/api\/projects\/([^/]+)\/backlog\/refine$/);
+  if (backlogRefineMatch && req.method === 'POST') {
+    const projectId = backlogRefineMatch[1]!;
+    return authMiddleware(req).then((auth) => refineStory(req, projectId, context.db, auth));
+  }
+
+  // --- Sprint-scoped routes (assign-stories, increment, review, retrospective) ---
+  const sprintAssignMatch = path.match(/^\/api\/projects\/([^/]+)\/sprints\/([^/]+)\/assign-stories$/);
+  if (sprintAssignMatch && req.method === 'POST') {
+    const projectId = sprintAssignMatch[1]!;
+    const sprintId = sprintAssignMatch[2]!;
+    return authMiddleware(req).then((auth) => assignStories(req, projectId, sprintId, context.db, auth));
+  }
+
+  const sprintIncrementMatch = path.match(/^\/api\/projects\/([^/]+)\/sprints\/([^/]+)\/increment$/);
+  if (sprintIncrementMatch && req.method === 'POST') {
+    const projectId = sprintIncrementMatch[1]!;
+    const sprintId = sprintIncrementMatch[2]!;
+    return authMiddleware(req).then((auth) => createIncrement(req, projectId, sprintId, context.db, auth));
+  }
+
+  const sprintReviewMatch = path.match(/^\/api\/projects\/([^/]+)\/sprints\/([^/]+)\/review$/);
+  if (sprintReviewMatch && req.method === 'POST') {
+    const projectId = sprintReviewMatch[1]!;
+    const sprintId = sprintReviewMatch[2]!;
+    return authMiddleware(req).then((auth) => createSprintReview(req, projectId, sprintId, context.db, auth));
+  }
+
+  const sprintRetroMatch = path.match(/^\/api\/projects\/([^/]+)\/sprints\/([^/]+)\/retrospective$/);
+  if (sprintRetroMatch && req.method === 'POST') {
+    const projectId = sprintRetroMatch[1]!;
+    const sprintId = sprintRetroMatch[2]!;
+    return authMiddleware(req).then((auth) => createRetrospective(req, projectId, sprintId, context.db, auth));
+  }
+
+  // --- Delivery Records ---
+  const projectDeliveryMatch = path.match(/^\/api\/projects\/([^/]+)\/delivery-records$/);
+  if (projectDeliveryMatch && req.method === 'POST') {
+    const projectId = projectDeliveryMatch[1]!;
+    return authMiddleware(req).then((auth) => createDeliveryRecord(req, projectId, context.db, auth));
+  }
+
+  if (projectDeliveryMatch && req.method === 'GET') {
+    const projectId = projectDeliveryMatch[1]!;
+    return authMiddleware(req).then((auth) => listDeliveryRecords(req, projectId, context.db, auth));
+  }
+
+  const deliveryPostReviewMatch = path.match(/^\/api\/delivery-records\/([^/]+)\/post-review$/);
+  if (deliveryPostReviewMatch && req.method === 'POST') {
+    const deliveryId = deliveryPostReviewMatch[1]!;
+    return authMiddleware(req).then((auth) => createPostDeliveryReview(req, deliveryId, context.db, auth));
+  }
+
+  const deliveryIdMatch = path.match(/^\/api\/delivery-records\/([^/]+)$/);
+  if (deliveryIdMatch && req.method === 'GET') {
+    const deliveryId = deliveryIdMatch[1]!;
+    return authMiddleware(req).then((auth) => getDeliveryRecord(req, deliveryId, context.db, auth));
+  }
+
+  // --- Release Candidate seam routes (SBOM, Attestation) ---
+  const rcSbomMatch = path.match(/^\/api\/release-candidates\/([^/]+)\/sbom$/);
+  if (rcSbomMatch && req.method === 'POST') {
+    const releaseCandidateId = rcSbomMatch[1]!;
+    return authMiddleware(req).then((auth) => attachSbom(req, releaseCandidateId, context.db, auth));
+  }
+
+  const rcAttestMatch = path.match(/^\/api\/release-candidates\/([^/]+)\/attest$/);
+  if (rcAttestMatch && req.method === 'POST') {
+    const releaseCandidateId = rcAttestMatch[1]!;
+    return authMiddleware(req).then((auth) => createAttestation(req, releaseCandidateId, context.db, auth));
   }
 
   throw new NotFoundError('Not Found', 'NOT_FOUND');
