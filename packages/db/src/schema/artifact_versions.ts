@@ -10,6 +10,14 @@ export const artifactTypeEnum = pgEnum('artifact_type', [
   'evidence_bundle',
   'verification_result',
   'release_candidate',
+  'product_goal',
+  'increment',
+  'sprint_review',
+  'retrospective',
+  'delivery_record',
+  'sbom_manifest',
+  'provenance_attestation',
+  'post_delivery_review',
 ]);
 
 export const artifactVersions = pgTable('artifact_versions', {

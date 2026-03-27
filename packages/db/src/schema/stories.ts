@@ -34,4 +34,7 @@ export const stories = pgTable('stories', {
     .notNull(),
   assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
   sprintId: uuid('sprint_id').references(() => sprints.id, { onDelete: 'set null' }),
+
+  sortOrder: integer('sort_order').notNull().default(0),
+  readiness: text('readiness').notNull().default('not_ready'),
 });

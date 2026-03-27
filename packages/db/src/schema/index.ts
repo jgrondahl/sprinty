@@ -13,3 +13,5 @@ export { artifactTypeEnum, artifactVersions } from './artifact_versions';
 export { artifactEvaluations } from './artifact_evaluations';
 export { relationshipTypeEnum, artifactLineage } from './artifact_lineage';
 export { promotionStageEnum, gateDefinitions, stageTransitions } from './promotion';
+export { productGoals } from './product_goals';
+export { deliveryRecords } from './delivery_records';
